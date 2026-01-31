@@ -4,6 +4,8 @@ from typing import AsyncGenerator
 from fastapi import FastAPI
 from sqlalchemy import text
 
+from backend.api.session_router import router as session_router
+from backend.api.stats_router import router as stats_router
 from backend.database import async_session, engine
 from backend.models import Base
 
@@ -23,6 +25,9 @@ app = FastAPI(
     version="0.1.0",
     lifespan=lifespan,
 )
+
+app.include_router(session_router)
+app.include_router(stats_router)
 
 
 @app.get("/health")
