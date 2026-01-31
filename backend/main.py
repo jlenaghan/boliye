@@ -1,7 +1,10 @@
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import AsyncGenerator
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text
 
 from backend.api.session_router import router as session_router
@@ -26,6 +29,13 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173", "http://localhost:3000"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 app.include_router(session_router)
 app.include_router(stats_router)
 
@@ -35,3 +45,9 @@ async def health_check() -> dict[str, str]:
     async with async_session() as session:
         await session.execute(text("SELECT 1"))
     return {"status": "ok"}
+
+
+# Serve built frontend if it exists (must be last — catch-all mount)
+frontend_dist = Path(__file__).parent.parent / "frontend" / "dist"
+if frontend_dist.is_dir():
+    app.mount("/app", StaticFiles(directory=str(frontend_dist), html=True), name="frontend")
