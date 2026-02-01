@@ -1,0 +1,547 @@
+"""Tests for the agent system: context, scheduler, assessor, content, tutor, orchestrator."""
+
+from datetime import datetime, timedelta
+from unittest.mock import AsyncMock, MagicMock, patch
+
+from agents.assessor_agent import AssessorAgent, DetailedAssessment
+from agents.base import LearnerContext, ReviewEvent
+from agents.content_agent import ContentAgent, ExerciseSelection
+from agents.orchestrator import Orchestrator, _ActiveSession
+from agents.scheduler_agent import SchedulerAgent, SchedulerDecision
+from agents.tutor_agent import TutorAgent
+from backend.config import utcnow
+from backend.models.card import Card
+from backend.models.content_item import ContentItem
+from backend.models.exercise import Exercise
+from backend.srs.assessment import Assessment, AssessmentGrade
+from backend.srs.fsrs import FSRS
+from backend.srs.queue import ReviewQueue
+
+
+# --- Helpers ---
+
+
+def _make_context(
+    learner_id: int = 1,
+    reviews: list[ReviewEvent] | None = None,
+    session_correct: int = 0,
+    session_incorrect: int = 0,
+) -> LearnerContext:
+    ctx = LearnerContext(
+        learner_id=learner_id,
+        learner_name="Test",
+        cefr_level="A1",
+    )
+    if reviews:
+        for r in reviews:
+            ctx.record_review(r)
+    else:
+        ctx.session_correct = session_correct
+        ctx.session_incorrect = session_incorrect
+    return ctx
+
+
+def _make_review_event(
+    term: str = "नमस्ते",
+    grade: str = "correct",
+    rating: int = 3,
+) -> ReviewEvent:
+    return ReviewEvent(
+        card_id=1,
+        term=term,
+        definition="hello",
+        exercise_type="mcq",
+        rating=rating,
+        grade=grade,
+        feedback="",
+        time_ms=5000,
+    )
+
+
+def _make_exercise(
+    exercise_type: str = "mcq",
+    prompt: str = "What does नमस्ते mean?",
+    answer: str = "hello",
+    options: str | None = '["hello", "goodbye", "thanks", "sorry"]',
+) -> MagicMock:
+    ex = MagicMock(spec=Exercise)
+    ex.id = 1
+    ex.content_item_id = 1
+    ex.exercise_type = exercise_type
+    ex.prompt = prompt
+    ex.answer = answer
+    ex.options = options
+    ex.status = "approved"
+    ex.generation_model = "test"
+    ex.prompt_version = "v1"
+    return ex
+
+
+def _make_content_item(
+    term: str = "नमस्ते",
+    definition: str = "hello",
+    romanization: str = "namaste",
+    content_type: str = "vocab",
+    context: str | None = None,
+) -> MagicMock:
+    item = MagicMock(spec=ContentItem)
+    item.id = 1
+    item.term = term
+    item.definition = definition
+    item.romanization = romanization
+    item.content_type = content_type
+    item.context = context
+    item.cefr_level = "A1"
+    item.topics = "[]"
+    item.source_file = "test.txt"
+    item.familiarity = "unknown"
+    return item
+
+
+# --- LearnerContext ---
+
+
+class TestLearnerContext:
+    def test_empty_context(self) -> None:
+        ctx = _make_context()
+        assert ctx.session_count == 0
+        assert ctx.session_accuracy == 1.0
+        assert ctx.failure_streak() == 0
+
+    def test_record_correct(self) -> None:
+        ctx = _make_context()
+        ctx.record_review(_make_review_event(grade="correct"))
+        assert ctx.session_correct == 1
+        assert ctx.session_accuracy == 1.0
+
+    def test_record_incorrect(self) -> None:
+        ctx = _make_context()
+        ctx.record_review(_make_review_event(grade="incorrect", rating=1))
+        assert ctx.session_incorrect == 1
+        assert ctx.session_accuracy == 0.0
+        assert "नमस्ते" in ctx.struggling_terms
+
+    def test_failure_streak(self) -> None:
+        ctx = _make_context()
+        ctx.record_review(_make_review_event(grade="correct"))
+        ctx.record_review(_make_review_event(grade="incorrect", rating=1))
+        ctx.record_review(_make_review_event(grade="incorrect", rating=1))
+        assert ctx.failure_streak() == 2
+
+    def test_recent_reviews(self) -> None:
+        ctx = _make_context()
+        for i in range(10):
+            ctx.record_review(_make_review_event(term=f"term_{i}"))
+        recent = ctx.recent_reviews(3)
+        assert len(recent) == 3
+        assert recent[0].term == "term_7"
+
+
+# --- Scheduler Agent ---
+
+
+class TestSchedulerAgent:
+    def test_compute_limits_standard(self) -> None:
+        agent = SchedulerAgent()
+        ctx = _make_context()
+        new_limit, review_limit, reasoning = agent._compute_limits(ctx)
+        assert new_limit == 10  # Default from settings
+        assert review_limit == 20
+
+    def test_compute_limits_low_accuracy(self) -> None:
+        agent = SchedulerAgent()
+        # Simulate 10 reviews with low accuracy but ending with a correct answer
+        # (so failure streak doesn't override the accuracy check)
+        reviews = [
+            _make_review_event(grade="incorrect", rating=1),
+            _make_review_event(grade="correct"),
+            _make_review_event(grade="incorrect", rating=1),
+            _make_review_event(grade="correct"),
+            _make_review_event(grade="incorrect", rating=1),
+            _make_review_event(grade="incorrect", rating=1),
+            _make_review_event(grade="incorrect", rating=1),
+            _make_review_event(grade="incorrect", rating=1),
+            _make_review_event(grade="incorrect", rating=1),
+            _make_review_event(grade="correct"),  # ends with correct to avoid streak override
+        ]
+        ctx = _make_context(reviews=reviews)
+        new_limit, _, reasoning = agent._compute_limits(ctx)
+        assert new_limit < 10
+        assert "reducing" in reasoning.lower() or "Accuracy" in reasoning
+
+    def test_compute_limits_failure_streak(self) -> None:
+        agent = SchedulerAgent()
+        reviews = [_make_review_event(grade="incorrect", rating=1)] * 4
+        ctx = _make_context(reviews=reviews)
+        new_limit, _, reasoning = agent._compute_limits(ctx)
+        assert new_limit == 0
+        assert "pausing" in reasoning.lower()
+
+    def test_compute_limits_high_accuracy(self) -> None:
+        agent = SchedulerAgent()
+        reviews = [_make_review_event(grade="correct")] * 12
+        ctx = _make_context(reviews=reviews)
+        new_limit, _, reasoning = agent._compute_limits(ctx)
+        assert new_limit > 10
+        assert "increasing" in reasoning.lower() or "Great" in reasoning
+
+    def test_review_card(self) -> None:
+        agent = SchedulerAgent()
+        state = agent.fsrs.initial_state(rating=3)
+        new_state = agent.review_card(state, rating=3)
+        assert new_state.reps == 2
+        assert new_state.stability > state.stability
+
+
+# --- Assessor Agent ---
+
+
+class TestAssessorAgent:
+    def test_assess_mcq_correct(self) -> None:
+        agent = AssessorAgent()
+        exercise = _make_exercise(exercise_type="mcq", answer="hello")
+        ctx = _make_context()
+        result = agent.assess("hello", exercise, ctx)
+        assert result.assessment.grade == AssessmentGrade.CORRECT
+        assert result.error_type is None
+        assert result.should_explain is False
+        assert result.confidence == 1.0
+
+    def test_assess_mcq_incorrect(self) -> None:
+        agent = AssessorAgent()
+        exercise = _make_exercise(exercise_type="mcq", answer="hello")
+        ctx = _make_context()
+        result = agent.assess("goodbye", exercise, ctx)
+        assert result.assessment.grade == AssessmentGrade.INCORRECT
+        assert result.error_type == "vocabulary"
+        assert result.should_explain is True
+
+    def test_assess_exact_match_hindi(self) -> None:
+        agent = AssessorAgent()
+        exercise = _make_exercise(
+            exercise_type="cloze",
+            prompt="___ कैसे हो?",
+            answer="नमस्ते",
+        )
+        ctx = _make_context()
+        result = agent.assess("नमस्ते", exercise, ctx)
+        assert result.assessment.grade == AssessmentGrade.CORRECT
+
+    def test_should_explain_after_streak(self) -> None:
+        agent = AssessorAgent()
+        exercise = _make_exercise(exercise_type="cloze", answer="नमस्ते")
+        reviews = [_make_review_event(grade="incorrect", rating=1)] * 3
+        ctx = _make_context(reviews=reviews)
+        result = agent.assess("wrong", exercise, ctx)
+        assert result.should_explain is True
+
+    def test_no_explain_for_close(self) -> None:
+        agent = AssessorAgent()
+        exercise = _make_exercise(exercise_type="mcq", answer="hello")
+        ctx = _make_context()
+        # Correct answer -> no explain
+        result = agent.assess("hello", exercise, ctx)
+        assert result.should_explain is False
+
+
+# --- Content Agent ---
+
+
+class TestContentAgent:
+    def test_pick_exercise_type_new_card(self) -> None:
+        agent = ContentAgent()
+        card = MagicMock()
+        card.reps = 0
+        card.lapses = 0
+        card.stability = 0.5
+        ctx = _make_context()
+        ex_type, reasoning = agent._pick_exercise_type(card, ctx)
+        assert ex_type == "mcq"
+        assert "New card" in reasoning
+
+    def test_pick_exercise_type_high_lapses(self) -> None:
+        agent = ContentAgent()
+        card = MagicMock()
+        card.reps = 5
+        card.lapses = 4
+        card.stability = 2.0
+        ctx = _make_context()
+        ex_type, reasoning = agent._pick_exercise_type(card, ctx)
+        assert ex_type == "mcq"
+        assert "lapses" in reasoning
+
+    def test_pick_exercise_type_mature(self) -> None:
+        agent = ContentAgent()
+        card = MagicMock()
+        card.reps = 6
+        card.lapses = 0
+        card.stability = 15.0
+        ctx = _make_context()
+        ex_type, reasoning = agent._pick_exercise_type(card, ctx)
+        assert ex_type == "cloze"
+        assert "Mature" in reasoning
+
+    def test_pick_exercise_type_low_accuracy(self) -> None:
+        agent = ContentAgent()
+        card = MagicMock()
+        card.reps = 5
+        card.lapses = 0
+        card.stability = 10.0
+        reviews = [_make_review_event(grade="correct")] * 2 + [
+            _make_review_event(grade="incorrect", rating=1)
+        ] * 5
+        ctx = _make_context(reviews=reviews)
+        ex_type, reasoning = agent._pick_exercise_type(card, ctx)
+        assert ex_type == "mcq"
+        assert "accuracy" in reasoning.lower()
+
+
+# --- Tutor Agent ---
+
+
+class TestTutorAgent:
+    def test_determine_depth_first_failure(self) -> None:
+        agent = TutorAgent()
+        item = _make_content_item()
+        ctx = _make_context()
+        depth = agent._determine_depth(item, ctx, "typo")
+        assert depth == "brief"
+
+    def test_determine_depth_repeated_failure(self) -> None:
+        agent = TutorAgent()
+        item = _make_content_item()
+        reviews = [_make_review_event(grade="incorrect", rating=1)] * 4
+        ctx = _make_context(reviews=reviews)
+        depth = agent._determine_depth(item, ctx, "vocabulary")
+        assert depth == "detailed"
+
+    def test_template_explanation_correct_answer(self) -> None:
+        agent = TutorAgent()
+        assessment = Assessment(
+            grade=AssessmentGrade.INCORRECT,
+            suggested_rating=1,
+            feedback="Expected: नमस्ते",
+            expected="नमस्ते",
+            actual="wrong",
+        )
+        exercise = _make_exercise()
+        item = _make_content_item()
+        explanation = agent._template_explanation(assessment, exercise, item, "vocabulary")
+        assert "नमस्ते" in explanation
+        assert "namaste" in explanation
+
+    def test_explain_without_llm(self) -> None:
+        agent = TutorAgent()  # No LLM
+        assessment = Assessment(
+            grade=AssessmentGrade.INCORRECT,
+            suggested_rating=1,
+            feedback="Expected: नमस्ते",
+            expected="नमस्ते",
+            actual="wrong",
+        )
+        exercise = _make_exercise()
+        item = _make_content_item()
+        ctx = _make_context()
+        response = agent.explain(assessment, exercise, item, ctx, error_type="vocabulary")
+        assert response.explanation is not None
+        assert response.depth in ("brief", "standard", "detailed")
+        assert response.mnemonic is None  # No LLM -> no mnemonic
+
+    def test_grammar_note_for_grammar_content(self) -> None:
+        agent = TutorAgent()
+        item = _make_content_item(
+            content_type="grammar",
+            context="Subject + object + verb (SOV order)",
+        )
+        note = agent._grammar_note(item)
+        assert note is not None
+        assert "SOV" in note
+
+
+# --- Orchestrator ---
+
+
+def _mock_card(card_id: int = 1, content_item_id: int = 1, reps: int = 1) -> MagicMock:
+    card = MagicMock(spec=Card)
+    card.id = card_id
+    card.content_item_id = content_item_id
+    card.stability = 2.4
+    card.difficulty = 0.5
+    card.due = utcnow()
+    card.reps = reps
+    card.lapses = 0
+    return card
+
+
+class TestOrchestrator:
+    def _setup_orchestrator_with_session(
+        self,
+        cards: list | None = None,
+    ) -> tuple[Orchestrator, str]:
+        """Create an orchestrator with a pre-built session for testing."""
+        orch = Orchestrator()
+        ctx = _make_context()
+        if cards is None:
+            cards = [_mock_card(card_id=1), _mock_card(card_id=2)]
+        decision = SchedulerDecision(
+            queue=ReviewQueue(due_cards=cards, new_cards=[], total=len(cards)),
+            new_card_limit=10,
+            review_limit=20,
+            focus_topics=[],
+            reasoning="test",
+        )
+        session_id = "test-session-1"
+        orch._sessions[session_id] = _ActiveSession(
+            session_id=session_id,
+            ctx=ctx,
+            cards=cards,
+            card_index=0,
+            decision=decision,
+        )
+        return orch, session_id
+
+    async def test_get_next_card_returns_presented_card(self) -> None:
+        """get_next_card should return a PresentedCard when exercises exist."""
+        orch, session_id = self._setup_orchestrator_with_session()
+        exercise = _make_exercise()
+        content_item = _make_content_item()
+
+        db = AsyncMock()
+        # Mock content agent to return an exercise
+        orch.content.select_exercise = AsyncMock(
+            return_value=ExerciseSelection(exercise=exercise, reasoning="test")
+        )
+        # Mock DB query for content item
+        mock_result = MagicMock()
+        mock_result.scalar_one_or_none.return_value = content_item
+        db.execute = AsyncMock(return_value=mock_result)
+
+        presented = await orch.get_next_card(db, session_id)
+        assert presented is not None
+        assert presented.exercise == exercise
+        assert presented.content_item == content_item
+
+    async def test_get_next_card_skips_cards_without_exercises(self) -> None:
+        """get_next_card should skip cards with no exercises and advance."""
+        cards = [_mock_card(card_id=1), _mock_card(card_id=2)]
+        orch, session_id = self._setup_orchestrator_with_session(cards=cards)
+        exercise = _make_exercise()
+        content_item = _make_content_item()
+
+        db = AsyncMock()
+        # First card has no exercise, second does
+        orch.content.select_exercise = AsyncMock(
+            side_effect=[
+                None,  # card 1 — no exercise
+                ExerciseSelection(exercise=exercise, reasoning="test"),  # card 2
+            ]
+        )
+        mock_result = MagicMock()
+        mock_result.scalar_one_or_none.return_value = content_item
+        db.execute = AsyncMock(return_value=mock_result)
+
+        presented = await orch.get_next_card(db, session_id)
+        assert presented is not None
+        # Should have advanced past the first card
+        assert orch._sessions[session_id].card_index == 1
+
+    async def test_get_next_card_returns_none_at_end(self) -> None:
+        """get_next_card returns None when all cards are exhausted."""
+        orch, session_id = self._setup_orchestrator_with_session(cards=[])
+        db = AsyncMock()
+
+        presented = await orch.get_next_card(db, session_id)
+        assert presented is None
+
+    async def test_get_next_card_unknown_session(self) -> None:
+        """get_next_card returns None for an unknown session ID."""
+        orch = Orchestrator()
+        db = AsyncMock()
+        result = await orch.get_next_card(db, "nonexistent")
+        assert result is None
+
+    async def test_submit_answer_correct(self) -> None:
+        """submit_answer should return an AnswerResult for a correct response."""
+        orch, session_id = self._setup_orchestrator_with_session()
+        exercise = _make_exercise(exercise_type="mcq", answer="hello")
+        content_item = _make_content_item()
+        card = orch._sessions[session_id].cards[0]
+
+        # Pre-set the current presented card
+        from agents.orchestrator import PresentedCard
+
+        orch._sessions[session_id].current_presented = PresentedCard(
+            card=card,
+            exercise=exercise,
+            content_item=content_item,
+            selection_reasoning="test",
+        )
+
+        db = AsyncMock()
+        result = await orch.submit_answer(db, session_id, "hello", time_ms=3000)
+
+        assert result is not None
+        assert result.assessment.assessment.grade == AssessmentGrade.CORRECT
+        assert result.rating_used == 3  # MCQ correct -> Good
+        assert "stability" in result.new_card_state
+        # Card index should have advanced
+        assert orch._sessions[session_id].card_index == 1
+        # Review should be recorded in context
+        ctx = orch._sessions[session_id].ctx
+        assert ctx.session_count == 1
+        assert ctx.session_correct == 1
+
+    async def test_submit_answer_incorrect_triggers_tutor(self) -> None:
+        """submit_answer for an incorrect response should trigger tutoring."""
+        orch, session_id = self._setup_orchestrator_with_session()
+        exercise = _make_exercise(exercise_type="mcq", answer="hello")
+        content_item = _make_content_item()
+        card = orch._sessions[session_id].cards[0]
+
+        from agents.orchestrator import PresentedCard
+
+        orch._sessions[session_id].current_presented = PresentedCard(
+            card=card,
+            exercise=exercise,
+            content_item=content_item,
+            selection_reasoning="test",
+        )
+
+        db = AsyncMock()
+        result = await orch.submit_answer(db, session_id, "goodbye", time_ms=5000)
+
+        assert result is not None
+        assert result.assessment.assessment.grade == AssessmentGrade.INCORRECT
+        assert result.rating_used == 1  # Incorrect -> Again
+        assert result.tutor_response is not None  # Tutor should explain
+
+    async def test_session_summary(self) -> None:
+        """Session summary should reflect reviews recorded in context."""
+        orch, session_id = self._setup_orchestrator_with_session()
+        ctx = orch._sessions[session_id].ctx
+        ctx.record_review(_make_review_event(grade="correct", rating=3))
+        ctx.record_review(_make_review_event(grade="incorrect", rating=1))
+
+        summary = orch.get_session_summary(session_id)
+        assert summary is not None
+        assert summary.cards_reviewed == 2
+        assert summary.correct == 1
+        assert summary.incorrect == 1
+        assert summary.accuracy == 0.5
+
+    async def test_end_session_removes_session(self) -> None:
+        """end_session should return a summary and remove the session."""
+        orch, session_id = self._setup_orchestrator_with_session()
+        summary = orch.end_session(session_id)
+        assert summary is not None
+        assert session_id not in orch._sessions
+
+    async def test_evict_expired_sessions(self) -> None:
+        """Expired sessions should be evicted."""
+        orch, session_id = self._setup_orchestrator_with_session()
+        # Backdate the session's created_at to exceed TTL
+        session = orch._sessions[session_id]
+        session.created_at = utcnow() - timedelta(seconds=orch._session_ttl + 1)
+
+        orch._evict_expired_sessions()
+        assert session_id not in orch._sessions
