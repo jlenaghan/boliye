@@ -1,17 +1,21 @@
-"""Tests for the agent system: context, scheduler, assessor, content, tutor."""
+"""Tests for the agent system: context, scheduler, assessor, content, tutor, orchestrator."""
 
 from datetime import datetime, timedelta
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from agents.assessor_agent import AssessorAgent, DetailedAssessment
 from agents.base import LearnerContext, ReviewEvent
-from agents.content_agent import ContentAgent
-from agents.scheduler_agent import SchedulerAgent
+from agents.content_agent import ContentAgent, ExerciseSelection
+from agents.orchestrator import Orchestrator, _ActiveSession
+from agents.scheduler_agent import SchedulerAgent, SchedulerDecision
 from agents.tutor_agent import TutorAgent
+from backend.config import utcnow
+from backend.models.card import Card
 from backend.models.content_item import ContentItem
 from backend.models.exercise import Exercise
 from backend.srs.assessment import Assessment, AssessmentGrade
 from backend.srs.fsrs import FSRS
+from backend.srs.queue import ReviewQueue
 
 
 # --- Helpers ---
@@ -352,3 +356,192 @@ class TestTutorAgent:
         note = agent._grammar_note(item)
         assert note is not None
         assert "SOV" in note
+
+
+# --- Orchestrator ---
+
+
+def _mock_card(card_id: int = 1, content_item_id: int = 1, reps: int = 1) -> MagicMock:
+    card = MagicMock(spec=Card)
+    card.id = card_id
+    card.content_item_id = content_item_id
+    card.stability = 2.4
+    card.difficulty = 0.5
+    card.due = utcnow()
+    card.reps = reps
+    card.lapses = 0
+    return card
+
+
+class TestOrchestrator:
+    def _setup_orchestrator_with_session(
+        self,
+        cards: list | None = None,
+    ) -> tuple[Orchestrator, str]:
+        """Create an orchestrator with a pre-built session for testing."""
+        orch = Orchestrator()
+        ctx = _make_context()
+        if cards is None:
+            cards = [_mock_card(card_id=1), _mock_card(card_id=2)]
+        decision = SchedulerDecision(
+            queue=ReviewQueue(due_cards=cards, new_cards=[], total=len(cards)),
+            new_card_limit=10,
+            review_limit=20,
+            focus_topics=[],
+            reasoning="test",
+        )
+        session_id = "test-session-1"
+        orch._sessions[session_id] = _ActiveSession(
+            session_id=session_id,
+            ctx=ctx,
+            cards=cards,
+            card_index=0,
+            decision=decision,
+        )
+        return orch, session_id
+
+    async def test_get_next_card_returns_presented_card(self) -> None:
+        """get_next_card should return a PresentedCard when exercises exist."""
+        orch, session_id = self._setup_orchestrator_with_session()
+        exercise = _make_exercise()
+        content_item = _make_content_item()
+
+        db = AsyncMock()
+        # Mock content agent to return an exercise
+        orch.content.select_exercise = AsyncMock(
+            return_value=ExerciseSelection(exercise=exercise, reasoning="test")
+        )
+        # Mock DB query for content item
+        mock_result = MagicMock()
+        mock_result.scalar_one_or_none.return_value = content_item
+        db.execute = AsyncMock(return_value=mock_result)
+
+        presented = await orch.get_next_card(db, session_id)
+        assert presented is not None
+        assert presented.exercise == exercise
+        assert presented.content_item == content_item
+
+    async def test_get_next_card_skips_cards_without_exercises(self) -> None:
+        """get_next_card should skip cards with no exercises and advance."""
+        cards = [_mock_card(card_id=1), _mock_card(card_id=2)]
+        orch, session_id = self._setup_orchestrator_with_session(cards=cards)
+        exercise = _make_exercise()
+        content_item = _make_content_item()
+
+        db = AsyncMock()
+        # First card has no exercise, second does
+        orch.content.select_exercise = AsyncMock(
+            side_effect=[
+                None,  # card 1 — no exercise
+                ExerciseSelection(exercise=exercise, reasoning="test"),  # card 2
+            ]
+        )
+        mock_result = MagicMock()
+        mock_result.scalar_one_or_none.return_value = content_item
+        db.execute = AsyncMock(return_value=mock_result)
+
+        presented = await orch.get_next_card(db, session_id)
+        assert presented is not None
+        # Should have advanced past the first card
+        assert orch._sessions[session_id].card_index == 1
+
+    async def test_get_next_card_returns_none_at_end(self) -> None:
+        """get_next_card returns None when all cards are exhausted."""
+        orch, session_id = self._setup_orchestrator_with_session(cards=[])
+        db = AsyncMock()
+
+        presented = await orch.get_next_card(db, session_id)
+        assert presented is None
+
+    async def test_get_next_card_unknown_session(self) -> None:
+        """get_next_card returns None for an unknown session ID."""
+        orch = Orchestrator()
+        db = AsyncMock()
+        result = await orch.get_next_card(db, "nonexistent")
+        assert result is None
+
+    async def test_submit_answer_correct(self) -> None:
+        """submit_answer should return an AnswerResult for a correct response."""
+        orch, session_id = self._setup_orchestrator_with_session()
+        exercise = _make_exercise(exercise_type="mcq", answer="hello")
+        content_item = _make_content_item()
+        card = orch._sessions[session_id].cards[0]
+
+        # Pre-set the current presented card
+        from agents.orchestrator import PresentedCard
+
+        orch._sessions[session_id].current_presented = PresentedCard(
+            card=card,
+            exercise=exercise,
+            content_item=content_item,
+            selection_reasoning="test",
+        )
+
+        db = AsyncMock()
+        result = await orch.submit_answer(db, session_id, "hello", time_ms=3000)
+
+        assert result is not None
+        assert result.assessment.assessment.grade == AssessmentGrade.CORRECT
+        assert result.rating_used == 3  # MCQ correct -> Good
+        assert "stability" in result.new_card_state
+        # Card index should have advanced
+        assert orch._sessions[session_id].card_index == 1
+        # Review should be recorded in context
+        ctx = orch._sessions[session_id].ctx
+        assert ctx.session_count == 1
+        assert ctx.session_correct == 1
+
+    async def test_submit_answer_incorrect_triggers_tutor(self) -> None:
+        """submit_answer for an incorrect response should trigger tutoring."""
+        orch, session_id = self._setup_orchestrator_with_session()
+        exercise = _make_exercise(exercise_type="mcq", answer="hello")
+        content_item = _make_content_item()
+        card = orch._sessions[session_id].cards[0]
+
+        from agents.orchestrator import PresentedCard
+
+        orch._sessions[session_id].current_presented = PresentedCard(
+            card=card,
+            exercise=exercise,
+            content_item=content_item,
+            selection_reasoning="test",
+        )
+
+        db = AsyncMock()
+        result = await orch.submit_answer(db, session_id, "goodbye", time_ms=5000)
+
+        assert result is not None
+        assert result.assessment.assessment.grade == AssessmentGrade.INCORRECT
+        assert result.rating_used == 1  # Incorrect -> Again
+        assert result.tutor_response is not None  # Tutor should explain
+
+    async def test_session_summary(self) -> None:
+        """Session summary should reflect reviews recorded in context."""
+        orch, session_id = self._setup_orchestrator_with_session()
+        ctx = orch._sessions[session_id].ctx
+        ctx.record_review(_make_review_event(grade="correct", rating=3))
+        ctx.record_review(_make_review_event(grade="incorrect", rating=1))
+
+        summary = orch.get_session_summary(session_id)
+        assert summary is not None
+        assert summary.cards_reviewed == 2
+        assert summary.correct == 1
+        assert summary.incorrect == 1
+        assert summary.accuracy == 0.5
+
+    async def test_end_session_removes_session(self) -> None:
+        """end_session should return a summary and remove the session."""
+        orch, session_id = self._setup_orchestrator_with_session()
+        summary = orch.end_session(session_id)
+        assert summary is not None
+        assert session_id not in orch._sessions
+
+    async def test_evict_expired_sessions(self) -> None:
+        """Expired sessions should be evicted."""
+        orch, session_id = self._setup_orchestrator_with_session()
+        # Backdate the session's created_at to exceed TTL
+        session = orch._sessions[session_id]
+        session.created_at = utcnow() - timedelta(seconds=orch._session_ttl + 1)
+
+        orch._evict_expired_sessions()
+        assert session_id not in orch._sessions

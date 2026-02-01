@@ -112,6 +112,65 @@ class TestFSRS:
         int_95 = fsrs_95._stability_to_interval(10.0)
         assert int_80 > int_95
 
+    # --- FSRS Edge Cases ---
+
+    def test_review_very_large_elapsed_time(self) -> None:
+        """Reviewing a card after an extremely long delay should not crash."""
+        state = self.fsrs.initial_state(rating=3)
+        # Simulate 10 years overdue
+        far_future = state.due + timedelta(days=3650)
+        result = self.fsrs.review(state, rating=3, review_time=far_future)
+        assert result.new_state.stability > 0
+        assert result.new_state.due > far_future
+        assert result.retrievability < 0.1  # Very low recall after 10 years
+
+    def test_review_very_small_stability(self) -> None:
+        """A card with minimal stability should still produce valid results."""
+        state = CardState(
+            stability=0.1,  # MIN_STABILITY
+            difficulty=0.5,
+            due=utcnow(),
+            reps=1,
+            lapses=0,
+        )
+        result = self.fsrs.review(state, rating=3, review_time=state.due)
+        assert result.new_state.stability >= 0.1
+        assert result.interval_days >= 1.0
+
+    def test_difficulty_stays_bounded(self) -> None:
+        """Difficulty should remain in [0.01, 0.99] regardless of review history."""
+        state = self.fsrs.initial_state(rating=3)
+        # Hammer it with "Easy" ratings to push difficulty down
+        for _ in range(20):
+            result = self.fsrs.review(state, rating=4, review_time=state.due)
+            state = result.new_state
+        assert 0.01 <= state.difficulty <= 0.99
+
+        # Now hammer it with "Again" to push difficulty up
+        state2 = self.fsrs.initial_state(rating=1)
+        for _ in range(20):
+            result = self.fsrs.review(state2, rating=1, review_time=state2.due)
+            state2 = result.new_state
+        assert 0.01 <= state2.difficulty <= 0.99
+
+    def test_rating_clamping(self) -> None:
+        """Ratings outside 1-4 should be clamped."""
+        state = self.fsrs.initial_state(rating=0)  # Clamped to 1
+        assert state.lapses == 1  # rating=1 (Again)
+
+        state2 = self.fsrs.initial_state(rating=99)  # Clamped to 4
+        assert state2.reps == 1  # rating=4 (Easy)
+
+    def test_retrievability_extreme_stability(self) -> None:
+        """Retrievability should stay valid with extreme stability values."""
+        # Very high stability — recall stays high even after many days
+        r = self.fsrs._retrievability(30, 1000.0)
+        assert 0.99 < r <= 1.0
+
+        # Very low stability — recall drops fast
+        r2 = self.fsrs._retrievability(30, 0.1)
+        assert 0 < r2 < 0.05
+
 
 # --- Assessment ---
 
