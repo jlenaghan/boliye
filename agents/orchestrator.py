@@ -11,9 +11,9 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import UTC, datetime
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from agents.assessor_agent import AssessorAgent, DetailedAssessment
@@ -89,6 +89,7 @@ class Orchestrator:
         self.assessor = AssessorAgent(llm=llm)
         self.tutor = TutorAgent(llm=llm)
         self._sessions: dict[str, _ActiveSession] = {}
+        self._session_ttl = settings.session_ttl_seconds
 
     async def start_session(
         self,
@@ -99,6 +100,9 @@ class Orchestrator:
 
         Returns a session_id and the scheduler's queue decision.
         """
+        # Evict stale sessions before creating a new one
+        self._evict_expired_sessions()
+
         # Load learner context
         ctx = await self._build_context(db, learner_id)
 
@@ -106,7 +110,7 @@ class Orchestrator:
         decision = await self.scheduler.build_adaptive_queue(db, ctx)
 
         # Create session
-        session_id = f"session-{learner_id}-{int(datetime.utcnow().timestamp())}"
+        session_id = f"session-{learner_id}-{int(datetime.now(UTC).timestamp())}"
         cards = decision.queue.interleaved()
 
         self._sessions[session_id] = _ActiveSession(
@@ -141,37 +145,37 @@ class Orchestrator:
             logger.error("Session %s not found", session_id)
             return None
 
-        if session.card_index >= len(session.cards):
-            return None
+        while session.card_index < len(session.cards):
+            card = session.cards[session.card_index]
 
-        card = session.cards[session.card_index]
+            # Content agent selects the exercise
+            selection = await self.content.select_exercise(db, card, session.ctx)
+            if selection is None:
+                logger.warning("Skipping card %d: no exercises", card.id)
+                session.card_index += 1
+                continue
 
-        # Content agent selects the exercise
-        selection = await self.content.select_exercise(db, card, session.ctx)
-        if selection is None:
-            # Skip cards with no exercises
-            logger.warning("Skipping card %d: no exercises", card.id)
-            session.card_index += 1
-            return await self.get_next_card(db, session_id)
+            # Load the content item
+            stmt = select(ContentItem).where(ContentItem.id == card.content_item_id)
+            result = await db.execute(stmt)
+            content_item = result.scalar_one_or_none()
 
-        # Load the content item
-        stmt = select(ContentItem).where(ContentItem.id == card.content_item_id)
-        result = await db.execute(stmt)
-        content_item = result.scalar_one_or_none()
+            if content_item is None:
+                logger.error(
+                    "Content item %d not found for card %d", card.content_item_id, card.id
+                )
+                session.card_index += 1
+                continue
 
-        if content_item is None:
-            logger.error("Content item %d not found for card %d", card.content_item_id, card.id)
-            session.card_index += 1
-            return await self.get_next_card(db, session_id)
+            session.current_presented = PresentedCard(
+                card=card,
+                exercise=selection.exercise,
+                content_item=content_item,
+                selection_reasoning=selection.reasoning,
+            )
+            return session.current_presented
 
-        session.current_presented = PresentedCard(
-            card=card,
-            exercise=selection.exercise,
-            content_item=content_item,
-            selection_reasoning=selection.reasoning,
-        )
-
-        return session.current_presented
+        return None
 
     async def submit_answer(
         self,
@@ -256,6 +260,7 @@ class Orchestrator:
             grade=assessment.grade.value,
             feedback=assessment.feedback,
             time_ms=time_ms,
+            exercise_id=exercise.id,
         )
         ctx.record_review(event)
 
@@ -283,7 +288,7 @@ class Orchestrator:
             return None
 
         ctx = session.ctx
-        now = datetime.utcnow()
+        now = datetime.now(UTC)
         duration = (now - ctx.session_start).total_seconds()
 
         return SessionSummary(
@@ -305,6 +310,17 @@ class Orchestrator:
         self._sessions.pop(session_id, None)
         return summary
 
+    def _evict_expired_sessions(self) -> None:
+        """Remove sessions that have exceeded the TTL."""
+        now = datetime.now(UTC)
+        expired = [
+            sid for sid, s in self._sessions.items()
+            if (now - s.created_at).total_seconds() > self._session_ttl
+        ]
+        for sid in expired:
+            logger.info("Evicting expired session %s", sid)
+            self._sessions.pop(sid, None)
+
     @property
     def active_sessions(self) -> list[str]:
         """List active session IDs."""
@@ -325,8 +341,6 @@ class Orchestrator:
         level = learner.current_level if learner else "A1"
 
         # Count total reviews
-        from sqlalchemy import func
-
         count_stmt = select(func.count(ReviewLog.id)).where(
             ReviewLog.learner_id == learner_id
         )
@@ -350,3 +364,4 @@ class _ActiveSession:
     card_index: int
     decision: SchedulerDecision
     current_presented: PresentedCard | None = None
+    created_at: datetime = field(default_factory=lambda: datetime.now(UTC))

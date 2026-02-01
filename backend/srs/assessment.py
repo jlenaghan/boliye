@@ -50,9 +50,9 @@ class Assessment:
 
 # Grade to suggested rating mapping
 GRADE_TO_RATING = {
-    AssessmentGrade.CORRECT: 4,    # Easy if you got it right
-    AssessmentGrade.CLOSE: 3,      # Good - minor issues
-    AssessmentGrade.PARTIAL: 2,    # Hard - needs more work
+    AssessmentGrade.CORRECT: 3,    # Good — correct recall (not Easy; that's reserved for self-rating)
+    AssessmentGrade.CLOSE: 3,      # Good — minor issues
+    AssessmentGrade.PARTIAL: 2,    # Hard — needs more work
     AssessmentGrade.INCORRECT: 1,  # Again
 }
 

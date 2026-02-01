@@ -13,6 +13,9 @@ class Settings(BaseSettings):
     target_retention: float = 0.9
     max_new_cards_per_session: int = 10
     max_reviews_per_session: int = 20
+    llm_input_price_per_million: float = 3.0
+    llm_output_price_per_million: float = 15.0
+    session_ttl_seconds: int = 7200  # 2 hours
     debug: bool = False
 
     model_config = {"env_prefix": "HINDI_SRS_", "env_file": ".env"}

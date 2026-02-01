@@ -8,8 +8,10 @@ Responsibilities:
 
 from __future__ import annotations
 
+import json
 import logging
 from dataclasses import dataclass
+from datetime import UTC, datetime
 
 from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -17,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from agents.base import BaseAgent, LearnerContext
 from backend.config import settings
 from backend.models.card import Card
+from backend.models.content_item import ContentItem
 from backend.models.review_log import ReviewLog
 from backend.srs.fsrs import FSRS, CardState
 from backend.srs.queue import ReviewQueue
@@ -66,9 +69,7 @@ class SchedulerAgent(BaseAgent):
         new_limit, review_limit, reasoning = self._compute_limits(ctx)
 
         # Fetch due cards
-        from datetime import datetime
-
-        now = datetime.utcnow()
+        now = datetime.now(UTC)
         due_stmt = (
             select(Card)
             .where(
@@ -164,8 +165,6 @@ class SchedulerAgent(BaseAgent):
             return []
 
         # Get content items for failed cards and extract topics
-        from backend.models.content_item import ContentItem
-
         stmt = (
             select(ContentItem.topics)
             .join(Card, Card.content_item_id == ContentItem.id)
@@ -173,8 +172,6 @@ class SchedulerAgent(BaseAgent):
         )
         result = await db.execute(stmt)
         topic_strings = [row[0] for row in result.all() if row[0]]
-
-        import json
 
         topic_counts: dict[str, int] = {}
         for ts in topic_strings:

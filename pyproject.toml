@@ -25,6 +25,11 @@ dev = [
     "pre-commit>=4.0.0",
 ]
 
+[project.scripts]
+hindi-srs = "hindi_srs.__main__:main"
+hindi-srs-ingest = "scripts.ingest:main"
+hindi-srs-load = "scripts.load_to_db:main"
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"

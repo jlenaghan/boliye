@@ -13,11 +13,8 @@ import json
 import logging
 import sys
 import time
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
-
-# Ensure project root is on path
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from sqlalchemy import and_, func, select
 
@@ -61,7 +58,7 @@ async def cmd_review(args: argparse.Namespace) -> None:
     learner_id = await ensure_learner()
     fsrs = FSRS(target_retention=settings.target_retention)
     max_cards = args.max_cards
-    now = datetime.utcnow()
+    now = datetime.now(UTC)
 
     async with async_session() as db:
         # Get due cards
@@ -218,7 +215,7 @@ async def cmd_stats(args: argparse.Namespace) -> None:
     """Show learner statistics."""
     await ensure_db()
     learner_id = await ensure_learner()
-    now = datetime.utcnow()
+    now = datetime.now(UTC)
 
     async with async_session() as db:
         # Total cards
@@ -294,7 +291,7 @@ async def cmd_add(args: argparse.Namespace) -> None:
             content_item_id=item.id,
             stability=0.5,
             difficulty=0.3,
-            due=datetime.utcnow(),
+            due=datetime.now(UTC),
             reps=0,
             lapses=0,
         )
@@ -308,7 +305,7 @@ async def cmd_due(args: argparse.Namespace) -> None:
     """Show how many cards are due."""
     await ensure_db()
     learner_id = await ensure_learner()
-    now = datetime.utcnow()
+    now = datetime.now(UTC)
 
     async with async_session() as db:
         due = (await db.execute(

@@ -18,6 +18,7 @@ from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from agents.base import BaseAgent, LearnerContext
+from backend.config import settings
 from backend.llm_client import LLMClient
 from backend.models.card import Card
 from backend.models.content_item import ContentItem
@@ -104,7 +105,7 @@ class ContentAgent(BaseAgent):
         matching = [e for e in exercises if e.exercise_type == target_type]
         if matching:
             # Avoid the most recently used exercise
-            recent_types = self._recent_exercise_types(ctx, card.id)
+            recent_types = self._recent_exercise_ids(ctx, card.id)
             unused = [e for e in matching if e.id not in recent_types]
             exercise = random.choice(unused) if unused else random.choice(matching)
         else:
@@ -144,7 +145,7 @@ class ContentAgent(BaseAgent):
 
         return "mcq", "Default: starting with MCQ."
 
-    def _recent_exercise_types(
+    def _recent_exercise_ids(
         self,
         ctx: LearnerContext,
         card_id: int,
@@ -152,8 +153,8 @@ class ContentAgent(BaseAgent):
         """Get exercise IDs recently used for this card (avoid repetition)."""
         recent = set()
         for event in ctx.session_reviews:
-            if event.card_id == card_id:
-                recent.add(event.card_id)
+            if event.card_id == card_id and event.exercise_id is not None:
+                recent.add(event.exercise_id)
         return recent
 
     async def generate_on_demand(
@@ -240,6 +241,6 @@ class ContentAgent(BaseAgent):
             if data.get("options")
             else None,
             status="generated",
-            generation_model="claude-sonnet-4-20250514",
+            generation_model=settings.anthropic_model,
             prompt_version="v1-ondemand",
         )

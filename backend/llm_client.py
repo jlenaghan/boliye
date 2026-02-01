@@ -29,7 +29,7 @@ class LLMClient:
         if len(self._request_timestamps) >= self.max_rpm:
             sleep_time = 60 - (now - self._request_timestamps[0])
             if sleep_time > 0:
-                logger.info(f"Rate limit reached, sleeping {sleep_time:.1f}s")
+                logger.info("Rate limit reached, sleeping %.1fs", sleep_time)
                 time.sleep(sleep_time)
         self._request_timestamps.append(time.monotonic())
 
@@ -58,14 +58,15 @@ class LLMClient:
         self.total_input_tokens += response.usage.input_tokens
         self.total_output_tokens += response.usage.output_tokens
         logger.debug(
-            f"Tokens used: {response.usage.input_tokens} in, {response.usage.output_tokens} out"
+            "Tokens used: %d in, %d out",
+            response.usage.input_tokens,
+            response.usage.output_tokens,
         )
         return response.content[0].text
 
     def get_cost_estimate(self) -> dict[str, float]:
-        # Approximate pricing (update as needed)
-        input_cost = self.total_input_tokens * 3.0 / 1_000_000
-        output_cost = self.total_output_tokens * 15.0 / 1_000_000
+        input_cost = self.total_input_tokens * settings.llm_input_price_per_million / 1_000_000
+        output_cost = self.total_output_tokens * settings.llm_output_price_per_million / 1_000_000
         return {
             "input_tokens": self.total_input_tokens,
             "output_tokens": self.total_output_tokens,
@@ -73,5 +74,13 @@ class LLMClient:
         }
 
 
-# Singleton instance
-llm_client = LLMClient()
+# Lazy singleton — avoids import-time Anthropic client creation when no API key is set.
+_llm_client: LLMClient | None = None
+
+
+def get_llm_client() -> LLMClient:
+    """Return the shared LLMClient, creating it on first call."""
+    global _llm_client
+    if _llm_client is None:
+        _llm_client = LLMClient()
+    return _llm_client

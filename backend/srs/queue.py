@@ -6,7 +6,7 @@ and session limits to prevent overwhelm.
 
 import logging
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import UTC, datetime
 
 from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -86,7 +86,7 @@ async def build_queue(
         A ReviewQueue with due and new cards.
     """
     config = config or QueueConfig()
-    now = now or datetime.utcnow()
+    now = now or datetime.now(UTC)
 
     # Fetch due cards: cards with reps > 0 that are past their due date
     # Ordered by how overdue they are (most overdue first)

@@ -106,9 +106,9 @@ class AssessorAgent(BaseAgent):
 
         # For cloze, check if it's a grammar vs vocabulary issue
         if exercise.exercise_type == "cloze":
-            # If the response is a real Hindi word but wrong, it's vocabulary
-            # If it's malformed, it could be a grammar error
-            if response.strip():
+            # Empty response suggests the learner doesn't know the word (vocabulary)
+            # A non-empty but wrong response in a cloze suggests a grammar issue
+            if not response.strip():
                 return "vocabulary"
             return "grammar"
 

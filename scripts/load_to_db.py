@@ -12,10 +12,9 @@ import logging
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-
 from sqlalchemy import select
 
+from backend.config import settings
 from backend.database import async_session, engine
 from backend.models import Base
 from backend.models.content_item import ContentItem
@@ -82,7 +81,7 @@ async def load_exercises(exercises_path: Path, term_to_id: dict[str, int]) -> in
                 answer=entry["answer"],
                 options=entry.get("options"),
                 status="generated",
-                generation_model="claude-sonnet-4-20250514",
+                generation_model=settings.anthropic_model,
                 prompt_version="v1",
             )
             session.add(exercise)

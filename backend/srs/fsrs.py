@@ -12,7 +12,7 @@ Key concepts:
 
 import math
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 
 # FSRS-4.5 default parameters (can be optimized with user data later)
 # w[0..3]: initial stability for ratings Again/Hard/Good/Easy on first review
@@ -90,7 +90,7 @@ class FSRS:
         stability = self.w[rating - 1]  # w0..w3
         difficulty = self._initial_difficulty(rating)
         interval = self._stability_to_interval(stability)
-        due = datetime.utcnow() + timedelta(days=interval)
+        due = datetime.now(UTC) + timedelta(days=interval)
 
         reps = 0 if rating == 1 else 1
         lapses = 1 if rating == 1 else 0
@@ -120,7 +120,7 @@ class FSRS:
             ReviewResult with the new card state.
         """
         rating = max(1, min(4, rating))
-        review_time = review_time or datetime.utcnow()
+        review_time = review_time or datetime.now(UTC)
 
         # Calculate elapsed time and current retrievability
         elapsed_days = max(0, (review_time - state.due).total_seconds() / 86400 + self._stability_to_interval(state.stability))
