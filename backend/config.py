@@ -1,6 +1,16 @@
+from datetime import UTC, datetime
 from pathlib import Path
 
 from pydantic_settings import BaseSettings
+
+
+def utcnow() -> datetime:
+    """Return the current UTC time as a naive datetime.
+
+    Replaces the deprecated ``datetime.utcnow()`` while keeping datetimes
+    naive so they stay compatible with SQLite (which doesn't store tz info).
+    """
+    return datetime.now(UTC).replace(tzinfo=None)
 
 
 class Settings(BaseSettings):

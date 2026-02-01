@@ -1,8 +1,9 @@
-from datetime import UTC, datetime
+from datetime import datetime
 
 from sqlalchemy import DateTime, Float, ForeignKey, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
+from backend.config import utcnow
 from backend.models.base import Base
 
 
@@ -19,7 +20,7 @@ class ReviewLog(Base):
     stability_after: Mapped[float] = mapped_column(Float, nullable=False)
     difficulty_before: Mapped[float] = mapped_column(Float, nullable=False)
     difficulty_after: Mapped[float] = mapped_column(Float, nullable=False)
-    reviewed_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=lambda: datetime.now(UTC))
+    reviewed_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utcnow)
 
     card: Mapped["Card"] = relationship(back_populates="review_logs")  # type: ignore[name-defined] # noqa: F821
     learner: Mapped["Learner"] = relationship(back_populates="review_logs")  # type: ignore[name-defined] # noqa: F821

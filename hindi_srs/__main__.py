@@ -11,14 +11,12 @@ import argparse
 import asyncio
 import json
 import logging
-import sys
 import time
-from datetime import UTC, datetime
 from pathlib import Path
 
 from sqlalchemy import and_, func, select
 
-from backend.config import settings
+from backend.config import settings, utcnow
 from backend.database import async_session, engine
 from backend.models import Base
 from backend.models.card import Card
@@ -58,7 +56,7 @@ async def cmd_review(args: argparse.Namespace) -> None:
     learner_id = await ensure_learner()
     fsrs = FSRS(target_retention=settings.target_retention)
     max_cards = args.max_cards
-    now = datetime.now(UTC)
+    now = utcnow()
 
     async with async_session() as db:
         # Get due cards
@@ -215,7 +213,7 @@ async def cmd_stats(args: argparse.Namespace) -> None:
     """Show learner statistics."""
     await ensure_db()
     learner_id = await ensure_learner()
-    now = datetime.now(UTC)
+    now = utcnow()
 
     async with async_session() as db:
         # Total cards
@@ -291,7 +289,7 @@ async def cmd_add(args: argparse.Namespace) -> None:
             content_item_id=item.id,
             stability=0.5,
             difficulty=0.3,
-            due=datetime.now(UTC),
+            due=utcnow(),
             reps=0,
             lapses=0,
         )
@@ -305,7 +303,7 @@ async def cmd_due(args: argparse.Namespace) -> None:
     """Show how many cards are due."""
     await ensure_db()
     learner_id = await ensure_learner()
-    now = datetime.now(UTC)
+    now = utcnow()
 
     async with async_session() as db:
         due = (await db.execute(

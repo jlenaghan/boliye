@@ -10,8 +10,9 @@ from __future__ import annotations
 import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import datetime
 
+from backend.config import utcnow
 from backend.llm_client import LLMClient
 from backend.srs.assessment import Assessment
 from backend.srs.fsrs import CardState
@@ -32,7 +33,7 @@ class ReviewEvent:
     feedback: str
     time_ms: int
     exercise_id: int | None = None
-    timestamp: datetime = field(default_factory=lambda: datetime.now(UTC))
+    timestamp: datetime = field(default_factory=utcnow)
 
 
 @dataclass
@@ -56,7 +57,7 @@ class LearnerContext:
     session_reviews: list[ReviewEvent] = field(default_factory=list)
     session_correct: int = 0
     session_incorrect: int = 0
-    session_start: datetime = field(default_factory=lambda: datetime.now(UTC))
+    session_start: datetime = field(default_factory=utcnow)
 
     # Card-level data for the current session
     struggling_terms: list[str] = field(default_factory=list)

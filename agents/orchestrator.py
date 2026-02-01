@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import datetime
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -21,7 +21,7 @@ from agents.base import LearnerContext, ReviewEvent
 from agents.content_agent import ContentAgent, ExerciseSelection
 from agents.scheduler_agent import SchedulerAgent, SchedulerDecision
 from agents.tutor_agent import TutorAgent, TutorResponse
-from backend.config import settings
+from backend.config import settings, utcnow
 from backend.llm_client import LLMClient
 from backend.models.card import Card
 from backend.models.content_item import ContentItem
@@ -110,7 +110,7 @@ class Orchestrator:
         decision = await self.scheduler.build_adaptive_queue(db, ctx)
 
         # Create session
-        session_id = f"session-{learner_id}-{int(datetime.now(UTC).timestamp())}"
+        session_id = f"session-{learner_id}-{int(utcnow().timestamp())}"
         cards = decision.queue.interleaved()
 
         self._sessions[session_id] = _ActiveSession(
@@ -288,7 +288,7 @@ class Orchestrator:
             return None
 
         ctx = session.ctx
-        now = datetime.now(UTC)
+        now = utcnow()
         duration = (now - ctx.session_start).total_seconds()
 
         return SessionSummary(
@@ -312,7 +312,7 @@ class Orchestrator:
 
     def _evict_expired_sessions(self) -> None:
         """Remove sessions that have exceeded the TTL."""
-        now = datetime.now(UTC)
+        now = utcnow()
         expired = [
             sid for sid, s in self._sessions.items()
             if (now - s.created_at).total_seconds() > self._session_ttl
@@ -364,4 +364,4 @@ class _ActiveSession:
     card_index: int
     decision: SchedulerDecision
     current_presented: PresentedCard | None = None
-    created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
+    created_at: datetime = field(default_factory=lambda: utcnow())

@@ -1,13 +1,14 @@
 """API routes for learner statistics and dashboard data."""
 
 import logging
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Depends
 from sqlalchemy import and_, distinct, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.api.schemas import LearnerStatsResponse
+from backend.config import utcnow
 from backend.database import get_session
 from backend.models.card import Card
 from backend.models.review_log import ReviewLog
@@ -23,7 +24,7 @@ async def get_learner_stats(
     db: AsyncSession = Depends(get_session),
 ) -> LearnerStatsResponse:
     """Get overall statistics for a learner."""
-    now = datetime.now(UTC)
+    now = utcnow()
 
     # Total cards
     total_stmt = select(func.count(Card.id)).where(Card.learner_id == learner_id)

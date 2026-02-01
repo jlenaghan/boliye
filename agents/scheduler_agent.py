@@ -11,13 +11,11 @@ from __future__ import annotations
 import json
 import logging
 from dataclasses import dataclass
-from datetime import UTC, datetime
-
 from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from agents.base import BaseAgent, LearnerContext
-from backend.config import settings
+from backend.config import settings, utcnow
 from backend.models.card import Card
 from backend.models.content_item import ContentItem
 from backend.models.review_log import ReviewLog
@@ -69,7 +67,7 @@ class SchedulerAgent(BaseAgent):
         new_limit, review_limit, reasoning = self._compute_limits(ctx)
 
         # Fetch due cards
-        now = datetime.now(UTC)
+        now = utcnow()
         due_stmt = (
             select(Card)
             .where(

@@ -1,7 +1,8 @@
 """Tests for the SRS engine: FSRS algorithm, assessment, and queue logic."""
 
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 
+from backend.config import utcnow
 from backend.srs.assessment import (
     AssessmentGrade,
     assess_exact,
@@ -26,7 +27,7 @@ class TestFSRS:
         assert 0 < state.difficulty < 1
         assert state.reps == 1
         assert state.lapses == 0
-        assert state.due > datetime.now(UTC)
+        assert state.due > utcnow()
 
     def test_initial_state_again(self) -> None:
         state = self.fsrs.initial_state(rating=1)
