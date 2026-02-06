@@ -1,10 +1,11 @@
 """CLI interface for Hindi SRS.
 
 Usage:
-    python -m hindi_srs review          Start a review session
-    python -m hindi_srs stats           Show your statistics
-    python -m hindi_srs add "term" "def"  Add a new content item
-    python -m hindi_srs due             Show how many cards are due
+    python -m hindi_srs review              Start a review session
+    python -m hindi_srs stats               Show your statistics
+    python -m hindi_srs add "term" "def"    Add a new content item
+    python -m hindi_srs due                 Show how many cards are due
+    python -m hindi_srs render "नमस्ते"     Render Devanagari text cleanly
 """
 
 import argparse
@@ -26,6 +27,7 @@ from backend.models.learner import Learner
 from backend.models.review_log import ReviewLog
 from backend.srs.assessment import assess_exact, assess_mcq
 from backend.srs.fsrs import FSRS, CardState
+from hindi_srs.devanagari_renderer import is_devanagari, render_card_display, render_if_devanagari
 
 
 async def ensure_db() -> None:
@@ -112,12 +114,18 @@ async def cmd_review(args: argparse.Namespace) -> None:
                 continue
 
             # Display the exercise
-            print(f"  [{i}/{len(all_cards)}] ", end="")
+            card_label = f"  [{i}/{len(all_cards)}]"
             if card.reps == 0:
-                print("(NEW)", end=" ")
+                card_label += " (NEW)"
+            print(card_label)
+
+            # Render Devanagari prompts using the font renderer for clean display.
+            if is_devanagari(exercise.prompt):
+                print(render_if_devanagari(exercise.prompt))
+            else:
+                print(f"  {exercise.prompt}")
 
             if exercise.exercise_type == "mcq":
-                print(f"{exercise.prompt}")
                 options = []
                 if exercise.options:
                     try:
@@ -125,9 +133,11 @@ async def cmd_review(args: argparse.Namespace) -> None:
                     except json.JSONDecodeError:
                         pass
                 for j, opt in enumerate(options, 1):
-                    print(f"    {j}. {opt}")
-            else:
-                print(f"{exercise.prompt}")
+                    if is_devanagari(opt):
+                        print(f"    {j}.")
+                        print(render_if_devanagari(opt, indent="      "))
+                    else:
+                        print(f"    {j}. {opt}")
 
             # Get response
             start_time = time.time()
@@ -158,11 +168,16 @@ async def cmd_review(args: argparse.Namespace) -> None:
 
             # Display result
             if assessment.grade.value == "correct":
-                print(f"  Correct!")
+                print("  Correct!")
                 correct += 1
             else:
                 print(f"  {assessment.feedback}")
-                print(f"  Answer: {content_item.term} ({content_item.romanization}) = {content_item.definition}")
+                print()
+                print(render_card_display(
+                    content_item.term,
+                    romanization=content_item.romanization or "",
+                    definition=content_item.definition or "",
+                ))
 
             # Get rating (use suggested or ask)
             rating = assessment.suggested_rating
@@ -296,7 +311,12 @@ async def cmd_add(args: argparse.Namespace) -> None:
         db.add(card)
         await db.commit()
 
-        print(f"  Added: {args.term} = {args.definition} (card ready for review)")
+        print("  Added (card ready for review):")
+        print(render_card_display(
+            args.term,
+            romanization=args.romanization or "",
+            definition=args.definition,
+        ))
 
 
 async def cmd_due(args: argparse.Namespace) -> None:
@@ -319,6 +339,13 @@ async def cmd_due(args: argparse.Namespace) -> None:
         )).scalar() or 0
 
     print(f"  {due} cards due, {new} new cards available")
+
+
+def cmd_render(args: argparse.Namespace) -> None:
+    """Render Devanagari text in the terminal (sync, no DB needed)."""
+    print()
+    print(render_if_devanagari(args.text, font_size=args.font_size))
+    print()
 
 
 def main() -> None:
@@ -346,6 +373,13 @@ def main() -> None:
     # due
     subparsers.add_parser("due", help="Show cards due for review")
 
+    # render
+    render_parser = subparsers.add_parser("render", help="Render Devanagari text in the terminal")
+    render_parser.add_argument("text", help="Devanagari text to render")
+    render_parser.add_argument(
+        "-s", "--font-size", type=int, default=22, help="Font size in points (default: 22)"
+    )
+
     args = parser.parse_args()
 
     if args.verbose:
@@ -353,6 +387,11 @@ def main() -> None:
 
     if not args.command:
         parser.print_help()
+        return
+
+    # render is synchronous, all others are async.
+    if args.command == "render":
+        cmd_render(args)
         return
 
     cmd_map = {
