@@ -60,6 +60,34 @@ def read_json_file(path: Path) -> RawDocument:
     )
 
 
+def read_pdf_file(path: Path) -> RawDocument:
+    """Read a .pdf file with extractable text.
+
+    Requires the pdfplumber package. Only supports PDFs with embedded text
+    (not scanned/image-based PDFs). Uses NFC Unicode normalization for
+    correct Devanagari character composition.
+    """
+    try:
+        import pdfplumber
+    except ImportError:
+        logger.warning("pdfplumber not installed, skipping %s", path)
+        raise ImportError("Install pdfplumber to process .pdf files: pip install pdfplumber")
+
+    pages = []
+    with pdfplumber.open(str(path), unicode_norm="NFC") as pdf:
+        for page in pdf.pages:
+            text = page.extract_text()
+            if text and text.strip():
+                pages.append(text.strip())
+    content = "\n".join(pages)
+    return RawDocument(
+        content=content,
+        source_path=str(path),
+        file_type="pdf",
+        metadata={"page_count": len(pages)},
+    )
+
+
 def read_docx_file(path: Path) -> RawDocument:
     """Read a .docx file (Google Docs export).
 
@@ -89,6 +117,7 @@ HANDLERS: dict[str, callable] = {
     ".csv": read_csv_file,
     ".json": read_json_file,
     ".docx": read_docx_file,
+    ".pdf": read_pdf_file,
 }
 
 SUPPORTED_EXTENSIONS = set(HANDLERS.keys())

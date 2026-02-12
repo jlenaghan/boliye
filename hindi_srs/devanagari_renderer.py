@@ -1,20 +1,28 @@
-"""Render Devanagari text as clean pixel art in the terminal.
+"""Render Devanagari text beautifully in the terminal.
 
-Standard terminal fonts often render Devanagari poorly — broken ligatures,
-misaligned matras, incorrect conjuncts. This module renders Devanagari text
-using a proper TrueType font (via Pillow) and converts the result to Unicode
-half-block characters for crisp display in any terminal.
+Supports inline image rendering in Kitty and iTerm2 terminals using the
+ITF Devanagari font. For mixed English/Hindi text, extracts and renders
+only the Devanagari portions as images while keeping English as plain text.
+
+Falls back to plain Unicode for unsupported terminals.
 
 Usage:
-    from hindi_srs.devanagari_renderer import render_devanagari
+    from hindi_srs.devanagari_renderer import render_if_devanagari, display_card
 
-    print(render_devanagari("नमस्ते"))
+    # Mixed text - Hindi rendered as inline images
+    print(render_if_devanagari("What is: नमस्ते?"))
+
+    # Card display with term, romanization, and definition
+    display_card("नमस्ते", romanization="namaste", definition="hello")
 """
 
 from __future__ import annotations
 
+import base64
+import io
 import os
 import shutil
+import sys
 
 _PILLOW_AVAILABLE = False
 try:
@@ -24,47 +32,54 @@ try:
 except ImportError:
     pass
 
-# Half-block characters for 2-row-per-cell rendering:
-#   top pixel on, bottom pixel on  → █ (full block)
-#   top pixel on, bottom pixel off → ▀ (upper half)
-#   top pixel off, bottom pixel on → ▄ (lower half)
-#   both off                       → ' ' (space)
-_FULL = "█"
-_UPPER = "▀"
-_LOWER = "▄"
-_EMPTY = " "
 
-# Default font search paths, ordered by preference.
+# =============================================================================
+# Configuration
+# =============================================================================
+
+# Font search paths, ordered by preference (ITF Devanagari first for best rendering)
 _FONT_SEARCH_PATHS: list[str] = [
-    # Noto Sans Devanagari (best quality if installed)
+    # macOS fonts
+    "/System/Library/Fonts/Supplemental/ITFDevanagari.ttc",
+    "/System/Library/Fonts/Supplemental/Devanagari Sangam MN.ttc",
+    "/System/Library/Fonts/Supplemental/DevanagariMT.ttc",
+    # Linux fonts (Noto)
     "/usr/share/fonts/truetype/noto/NotoSansDevanagari-Regular.ttf",
     "/usr/share/fonts/google-noto/NotoSansDevanagari-Regular.ttf",
     "/usr/share/fonts/truetype/noto-sans-devanagari/NotoSansDevanagari-Regular.ttf",
-    # FreeSerif has solid Devanagari glyphs
-    "/usr/share/fonts/truetype/freefont/FreeSerif.ttf",
-    "/usr/share/fonts/truetype/freefont/FreeSans.ttf",
-    # macOS system fonts
-    "/System/Library/Fonts/Supplemental/Devanagari Sangam MN.ttc",
+    # User-installed on macOS
     "/Library/Fonts/NotoSansDevanagari-Regular.ttf",
 ]
 
-# Brightness threshold (0–255). Pixels above this are considered "on".
-_THRESHOLD = 80
+_DEFAULT_FONT_SIZE = 36
+_BG_COLOR = (30, 30, 30)  # Dark background
+_TEXT_COLOR = (220, 220, 220)  # Light text
 
-# Default font size in points for rendering.
-# 22pt gives a good balance between readability and terminal space usage.
-_DEFAULT_FONT_SIZE = 22
 
-# Horizontal padding in pixels around the rendered text.
-_H_PAD = 4
+# =============================================================================
+# Terminal Detection
+# =============================================================================
 
-# Vertical padding in pixels above and below the rendered text.
-_V_PAD = 4
+
+def _is_kitty_terminal() -> bool:
+    """Check if running in Kitty terminal."""
+    term = os.environ.get("TERM", "")
+    term_program = os.environ.get("TERM_PROGRAM", "").lower()
+    return term.startswith("xterm-kitty") or "kitty" in term_program
+
+
+def _is_iterm2_terminal() -> bool:
+    """Check if running in iTerm2."""
+    return bool(os.environ.get("ITERM_SESSION_ID")) or os.environ.get("TERM_PROGRAM") == "iTerm.app"
+
+
+def _supports_inline_images() -> bool:
+    """Check if terminal supports inline images."""
+    return _is_kitty_terminal() or _is_iterm2_terminal()
 
 
 def _find_font() -> str | None:
-    """Return the first available font path, or None."""
-    # Allow override via environment variable.
+    """Return the first available Devanagari font path, or None."""
     env_font = os.environ.get("HINDI_SRS_FONT")
     if env_font and os.path.isfile(env_font):
         return env_font
@@ -75,72 +90,262 @@ def _find_font() -> str | None:
     return None
 
 
-def _render_to_bitmap(
+# =============================================================================
+# Character Classification
+# =============================================================================
+
+
+def _is_devanagari_char(ch: str) -> bool:
+    """Check if a character is in the Devanagari Unicode range."""
+    cp = ord(ch)
+    return 0x0900 <= cp <= 0x097F or 0xA8E0 <= cp <= 0xA8FF
+
+
+def is_devanagari(text: str) -> bool:
+    """Return True if text contains any Devanagari characters."""
+    return any(_is_devanagari_char(ch) for ch in text)
+
+
+def is_pure_devanagari(text: str) -> bool:
+    """Return True if text contains Devanagari and no Latin letters.
+
+    Allows punctuation, digits, and whitespace alongside Devanagari.
+    """
+    has_devanagari = False
+    for ch in text:
+        cp = ord(ch)
+        if (0x0041 <= cp <= 0x005A) or (0x0061 <= cp <= 0x007A):  # A-Z, a-z
+            return False
+        if _is_devanagari_char(ch):
+            has_devanagari = True
+    return has_devanagari
+
+
+def extract_devanagari_segments(text: str) -> list[tuple[str, bool]]:
+    """Split text into (segment, is_devanagari) tuples.
+
+    Groups contiguous Devanagari and non-Devanagari text separately.
+    Punctuation and whitespace stay with their adjacent segment.
+    """
+    if not text:
+        return []
+
+    segments: list[tuple[str, bool]] = []
+    current_segment = ""
+    current_is_devanagari: bool | None = None
+    neutral_chars = " \t.,!?;:।॥'\"()-"
+
+    for ch in text:
+        ch_is_dev = _is_devanagari_char(ch)
+        is_neutral = ch in neutral_chars
+
+        if current_is_devanagari is None:
+            current_is_devanagari = ch_is_dev
+            current_segment = ch
+        elif is_neutral:
+            current_segment += ch
+        elif ch_is_dev == current_is_devanagari:
+            current_segment += ch
+        else:
+            if current_segment.strip():
+                segments.append((current_segment, current_is_devanagari))
+            current_segment = ch
+            current_is_devanagari = ch_is_dev
+
+    if current_segment.strip():
+        segments.append((current_segment, current_is_devanagari))
+
+    return segments
+
+
+# =============================================================================
+# Image Rendering
+# =============================================================================
+
+
+def _render_text_to_image(
     text: str,
     font_path: str,
     font_size: int = _DEFAULT_FONT_SIZE,
-) -> list[list[bool]]:
-    """Render *text* into a 2-D boolean grid (True = ink pixel)."""
+    padding: int = 15,
+) -> Image.Image:
+    """Render text to a PIL Image with the specified font."""
     font = ImageFont.truetype(font_path, font_size)
 
-    # Measure text bounding box to size the image.
-    dummy = Image.new("L", (1, 1), color=0)
+    # Measure text bounds
+    dummy = Image.new("RGB", (1, 1))
     draw = ImageDraw.Draw(dummy)
     bbox = draw.textbbox((0, 0), text, font=font)
-    x0, y0, x1, y1 = int(bbox[0]), int(bbox[1]), int(bbox[2]), int(bbox[3])
-    w = x1 - x0 + _H_PAD * 2
-    h = y1 - y0 + _V_PAD * 2
+    width = bbox[2] - bbox[0] + padding * 2
+    height = bbox[3] - bbox[1] + padding * 2
 
-    # Render white text on black background in grayscale.
-    img = Image.new("L", (w, h), color=0)
+    # Render
+    img = Image.new("RGB", (width, height), color=_BG_COLOR)
     draw = ImageDraw.Draw(img)
-    draw.text((_H_PAD - x0, _V_PAD - y0), text, font=font, fill=255)
+    draw.text((padding, -bbox[1] + padding), text, font=font, fill=_TEXT_COLOR)
 
-    # Convert to boolean grid by reading raw pixel bytes directly.
-    raw = img.tobytes()
-    grid: list[list[bool]] = []
-    for y in range(h):
-        row: list[bool] = []
-        for x in range(w):
-            row.append(raw[y * w + x] >= _THRESHOLD)
-        grid.append(row)
-    return grid
+    return img
 
 
-def _bitmap_to_blocks(grid: list[list[bool]], indent: str = "  ") -> str:
-    """Convert a boolean bitmap into half-block character art.
+def _image_to_base64_png(img: Image.Image) -> str:
+    """Convert PIL Image to base64-encoded PNG string."""
+    buffer = io.BytesIO()
+    img.save(buffer, format="PNG")
+    return base64.standard_b64encode(buffer.getvalue()).decode("ascii")
 
-    Each output character cell encodes two vertical pixels using Unicode
-    half-block characters, giving twice the vertical resolution of plain
-    block art.
+
+def _display_kitty_image(img: Image.Image) -> None:
+    """Display image using Kitty graphics protocol."""
+    b64_data = _image_to_base64_png(img)
+    chunk_size = 4096
+    first = True
+
+    while b64_data:
+        chunk = b64_data[:chunk_size]
+        b64_data = b64_data[chunk_size:]
+        m = 1 if b64_data else 0
+
+        if first:
+            sys.stdout.write(f"\033_Ga=T,f=100,m={m};{chunk}\033\\")
+            first = False
+        else:
+            sys.stdout.write(f"\033_Gm={m};{chunk}\033\\")
+
+    sys.stdout.flush()
+
+
+def _display_iterm2_image(img: Image.Image) -> None:
+    """Display image using iTerm2 inline image protocol."""
+    b64_data = _image_to_base64_png(img)
+    sys.stdout.write(f"\033]1337;File=inline=1;width=auto;preserveAspectRatio=1:{b64_data}\a")
+    sys.stdout.flush()
+
+
+def _display_inline_image(img: Image.Image) -> None:
+    """Display image using the appropriate terminal protocol."""
+    if _is_kitty_terminal():
+        _display_kitty_image(img)
+    elif _is_iterm2_terminal():
+        _display_iterm2_image(img)
+
+
+# =============================================================================
+# Public API
+# =============================================================================
+
+
+def display_mixed_text(
+    text: str,
+    *,
+    font_size: int = _DEFAULT_FONT_SIZE,
+    indent: str = "  ",
+) -> None:
+    """Display mixed text with Devanagari segments as inline images.
+
+    Prints directly to stdout. English text appears as plain terminal text,
+    Devanagari text renders as inline images (in supported terminals).
     """
-    rows = len(grid)
-    cols = len(grid[0]) if rows > 0 else 0
-    lines: list[str] = []
+    print(indent, end="")
 
-    for y in range(0, rows, 2):
-        line_chars: list[str] = []
-        for x in range(cols):
-            top = grid[y][x]
-            bot = grid[y + 1][x] if y + 1 < rows else False
-            if top and bot:
-                line_chars.append(_FULL)
-            elif top:
-                line_chars.append(_UPPER)
-            elif bot:
-                line_chars.append(_LOWER)
-            else:
-                line_chars.append(_EMPTY)
-        # Strip trailing spaces per line but keep indent.
-        lines.append(indent + "".join(line_chars).rstrip())
+    if not _PILLOW_AVAILABLE or not _supports_inline_images():
+        print(text)
+        return
 
-    # Remove blank leading/trailing lines.
-    while lines and lines[0].strip() == "":
-        lines.pop(0)
-    while lines and lines[-1].strip() == "":
-        lines.pop()
+    font_path = _find_font()
+    if not font_path:
+        print(text)
+        return
 
-    return "\n".join(lines)
+    segments = extract_devanagari_segments(text)
+    for segment_text, is_dev in segments:
+        if is_dev:
+            img = _render_text_to_image(segment_text.strip(), font_path, font_size)
+            _display_inline_image(img)
+        else:
+            print(segment_text, end="")
+
+    print()
+
+
+def render_if_devanagari(
+    text: str,
+    *,
+    font_size: int = _DEFAULT_FONT_SIZE,
+    indent: str = "  ",
+) -> str:
+    """Display text with Devanagari portions as inline images.
+
+    For terminals supporting inline images (Kitty, iTerm2), renders
+    Devanagari segments as images and returns empty string.
+    For other terminals, returns the text with indent for printing.
+    """
+    if is_devanagari(text) and _PILLOW_AVAILABLE and _supports_inline_images():
+        font_path = _find_font()
+        if font_path:
+            display_mixed_text(text, font_size=font_size, indent=indent)
+            return ""
+
+    return f"{indent}{text}"
+
+
+def display_card(
+    term: str,
+    romanization: str = "",
+    definition: str = "",
+    *,
+    font_size: int = _DEFAULT_FONT_SIZE,
+) -> None:
+    """Display a flashcard with Devanagari term and metadata.
+
+    Renders the term as an inline image (if supported) within a
+    decorative box, with romanization and definition below.
+    """
+    term_width = shutil.get_terminal_size((80, 24)).columns
+    box_width = min(60, term_width - 4)
+
+    def print_text_line(text: str) -> None:
+        padded = f"  {text}"
+        if len(padded) < box_width:
+            padded += " " * (box_width - len(padded))
+        elif len(padded) > box_width:
+            padded = padded[: box_width - 3] + "..."
+        print(f"  │{padded}│")
+
+    # Top border
+    print(f"  ╭{'─' * box_width}╮")
+    print(f"  │{' ' * box_width}│")
+
+    # Term (image or text)
+    if is_pure_devanagari(term) and _PILLOW_AVAILABLE and _supports_inline_images():
+        font_path = _find_font()
+        if font_path:
+            img = _render_text_to_image(term, font_path, font_size)
+            print("  │  ", end="")
+            _display_inline_image(img)
+            print(f"{' ' * (box_width - 4)}│")
+        else:
+            print_text_line(term)
+    else:
+        print_text_line(term)
+
+    print(f"  │{' ' * box_width}│")
+    print(f"  ├{'─' * box_width}┤")
+
+    # Metadata
+    if romanization:
+        print_text_line(romanization)
+    if definition:
+        print_text_line(definition)
+    if romanization or definition:
+        print(f"  │{' ' * box_width}│")
+
+    # Bottom border
+    print(f"  ╰{'─' * box_width}╯")
+
+
+# =============================================================================
+# Legacy API (for backward compatibility)
+# =============================================================================
 
 
 def render_devanagari(
@@ -150,43 +355,8 @@ def render_devanagari(
     indent: str = "  ",
     fallback: bool = True,
 ) -> str:
-    """Render Devanagari *text* as Unicode block art for terminal display.
-
-    Parameters
-    ----------
-    text:
-        The text to render (typically Hindi in Devanagari script).
-    font_size:
-        Font size in points.  Larger sizes give more detail but use more
-        terminal rows/columns.
-    indent:
-        String prepended to each output line.
-    fallback:
-        If True and rendering is not possible (missing Pillow or fonts),
-        return the original text wrapped with a simple border.  If False,
-        raise ``RuntimeError``.
-
-    Returns
-    -------
-    str
-        Multi-line string ready to be printed to the terminal.
-    """
-    if not _PILLOW_AVAILABLE:
-        if fallback:
-            return _fallback_render(text, indent=indent)
-        raise RuntimeError("Pillow is required for Devanagari font rendering (pip install Pillow)")
-
-    font_path = _find_font()
-    if font_path is None:
-        if fallback:
-            return _fallback_render(text, indent=indent)
-        raise RuntimeError(
-            "No Devanagari-capable font found. Install noto-fonts-devanagari or set "
-            "HINDI_SRS_FONT=/path/to/font.ttf"
-        )
-
-    grid = _render_to_bitmap(text, font_path, font_size)
-    return _bitmap_to_blocks(grid, indent=indent)
+    """Return text with indent. Use render_if_devanagari() for image display."""
+    return f"{indent}{text}"
 
 
 def render_card_display(
@@ -196,105 +366,17 @@ def render_card_display(
     *,
     font_size: int = _DEFAULT_FONT_SIZE,
 ) -> str:
-    """Render a full card display with rendered Devanagari and plain-text metadata.
-
-    Produces output like::
-
-        ┌──────────────────────────────────────┐
-        │                                      │
-        │   ▄▄  ▀█▀▄▄▄  ▄▄▀▀ ▄▀▄▄            │
-        │  ██▀  ██ ██▀  ██   ██▄▄▄            │
-        │                                      │
-        │  namaste                             │
-        │  hello / greetings                   │
-        │                                      │
-        └──────────────────────────────────────┘
-    """
-    # Render Devanagari text without the outer indent — we'll handle spacing inside the box.
-    rendered_text = render_devanagari(term, font_size=font_size, indent="")
-    rendered_lines = rendered_text.split("\n")
-
-    # Determine box width: fit the rendered content + metadata.
-    term_width = shutil.get_terminal_size((80, 24)).columns
-    content_max_width = max(
-        (len(line) for line in rendered_lines),
-        default=20,
-    )
-    # Also consider romanization and definition widths (with 4-char inner padding).
-    if romanization:
-        content_max_width = max(content_max_width, len(romanization) + 2)
-    if definition:
-        content_max_width = max(content_max_width, len(definition) + 2)
-    # Inner width = content + left/right padding of 2 chars each.
-    box_inner = content_max_width + 4
-    box_inner = min(box_inner, term_width - 6)
-    box_inner = max(box_inner, 20)
-
-    def _pad_line(text: str) -> str:
-        """Pad or trim *text* to exactly *box_inner* characters."""
-        padded = f"  {text}"
-        if len(padded) < box_inner:
-            return padded + " " * (box_inner - len(padded))
-        return padded[:box_inner]
-
-    lines: list[str] = []
-    lines.append(f"  ┌{'─' * box_inner}┐")
-    lines.append(f"  │{' ' * box_inner}│")
-
-    # Add rendered Devanagari lines (already have no indent — add 2-char left padding).
-    for rline in rendered_lines:
-        padded = f"  {rline}"
-        if len(padded) < box_inner:
-            padded = padded + " " * (box_inner - len(padded))
-        elif len(padded) > box_inner:
-            padded = padded[:box_inner]
-        lines.append(f"  │{padded}│")
-
-    lines.append(f"  │{' ' * box_inner}│")
-
-    # Add romanization and definition as plain text.
-    if romanization:
-        lines.append(f"  │{_pad_line(romanization)}│")
-    if definition:
-        lines.append(f"  │{_pad_line(definition)}│")
-
-    if romanization or definition:
-        lines.append(f"  │{' ' * box_inner}│")
-
-    lines.append(f"  └{'─' * box_inner}┘")
-
-    return "\n".join(lines)
+    """Display card and return empty string. Use display_card() directly."""
+    display_card(term, romanization, definition, font_size=font_size)
+    return ""
 
 
 def _fallback_render(text: str, indent: str = "  ") -> str:
-    """Simple bordered fallback when Pillow/fonts are unavailable."""
+    """Simple bordered text for testing."""
     inner = f" {text} "
     width = len(inner) + 2
-    lines = [
-        f"{indent}┌{'─' * width}┐",
+    return "\n".join([
+        f"{indent}╭{'─' * width}╮",
         f"{indent}│ {inner} │",
-        f"{indent}└{'─' * width}┘",
-    ]
-    return "\n".join(lines)
-
-
-def is_devanagari(text: str) -> bool:
-    """Return True if *text* contains Devanagari characters."""
-    for ch in text:
-        cp = ord(ch)
-        # Devanagari: U+0900–U+097F, Devanagari Extended: U+A8E0–U+A8FF
-        if 0x0900 <= cp <= 0x097F or 0xA8E0 <= cp <= 0xA8FF:
-            return True
-    return False
-
-
-def render_if_devanagari(
-    text: str,
-    *,
-    font_size: int = _DEFAULT_FONT_SIZE,
-    indent: str = "  ",
-) -> str:
-    """Render *text* as block art only if it contains Devanagari; otherwise return as-is."""
-    if is_devanagari(text):
-        return render_devanagari(text, font_size=font_size, indent=indent)
-    return f"{indent}{text}"
+        f"{indent}╰{'─' * width}╯",
+    ])

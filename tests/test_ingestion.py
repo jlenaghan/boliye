@@ -4,10 +4,12 @@ import json
 import tempfile
 from pathlib import Path
 
+import pytest
+
 from ingestion.dedup import deduplicate, normalize_hindi
 from ingestion.extractor import ExtractedItem, _parse_response, _split_into_chunks
 from ingestion.familiarity import assign_familiarity, infer_familiarity
-from ingestion.file_handlers import read_csv_file, read_file, read_text_file
+from ingestion.file_handlers import read_csv_file, read_file, read_pdf_file, read_text_file
 from ingestion.gap_analysis import analyze_gaps
 
 
@@ -51,6 +53,75 @@ class TestFileHandlers:
         data = json.loads(doc.content)
         assert len(data) == 2
         assert data[0]["hindi"] == "नमस्ते"
+
+    def test_read_pdf_file(self, tmp_path: Path) -> None:
+        fpdf = pytest.importorskip("fpdf")
+        font_path = Path(__file__).parent / "fixtures" / "NotoSansDevanagari-Regular.ttf"
+        if not font_path.exists():
+            pytest.skip("Devanagari test font not available")
+
+        f = tmp_path / "notes.pdf"
+        pdf = fpdf.FPDF()
+        pdf.add_page()
+        pdf.add_font("NotoDevanagari", fname=str(font_path))
+        pdf.set_font("NotoDevanagari", size=14)
+        pdf.cell(text="नमस्ते - hello")
+        pdf.ln()
+        pdf.cell(text="धन्यवाद - thank you")
+        pdf.output(str(f))
+
+        result = read_pdf_file(f)
+        assert result.file_type == "pdf"
+        assert result.source_path == str(f)
+        assert result.metadata["page_count"] == 1
+        assert "नमस्ते" in result.content, f"Devanagari corruption: {result.content!r}"
+        assert "धन्यवाद" in result.content, f"Devanagari corruption: {result.content!r}"
+        assert "hello" in result.content
+        assert "thank you" in result.content
+
+    def test_read_pdf_file_devanagari_matras(self, tmp_path: Path) -> None:
+        """Regression test: Devanagari matras must not map to wrong Unicode blocks."""
+        fpdf = pytest.importorskip("fpdf")
+        font_path = Path(__file__).parent / "fixtures" / "NotoSansDevanagari-Regular.ttf"
+        if not font_path.exists():
+            pytest.skip("Devanagari test font not available")
+
+        test_text = "में की हूँ"
+        f = tmp_path / "matras.pdf"
+        pdf = fpdf.FPDF()
+        pdf.add_page()
+        pdf.add_font("NotoDevanagari", fname=str(font_path))
+        pdf.set_font("NotoDevanagari", size=14)
+        pdf.cell(text=test_text)
+        pdf.output(str(f))
+
+        result = read_pdf_file(f)
+        for char in result.content:
+            code = ord(char)
+            assert not (0x1C50 <= code <= 0x1C7F), (
+                f"Ol Chiki char U+{code:04X} found -- Devanagari matra corruption"
+            )
+            assert not (0x1CD0 <= code <= 0x1CFF), (
+                f"Vedic Extension char U+{code:04X} found -- Devanagari matra corruption"
+            )
+
+    def test_read_pdf_file_missing_library(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        import sys
+
+        f = tmp_path / "test.pdf"
+        f.write_bytes(b"%PDF-1.4 fake")
+        saved = sys.modules.get("pdfplumber")
+        monkeypatch.setitem(sys.modules, "pdfplumber", None)
+        try:
+            read_pdf_file(f)
+            assert False, "Should have raised ImportError"
+        except ImportError as e:
+            assert "pdfplumber" in str(e)
+        finally:
+            if saved is not None:
+                sys.modules["pdfplumber"] = saved
+            else:
+                sys.modules.pop("pdfplumber", None)
 
     def test_read_file_dispatches(self, tmp_path: Path) -> None:
         f = tmp_path / "test.md"

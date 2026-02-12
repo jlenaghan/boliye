@@ -210,3 +210,12 @@ __marimo__/
 data/*.db
 node_modules/
 frontend/dist/
+
+# macOS
+.DS_Store
+
+# Claude Code
+.claude/
+
+# Local data (not for VCS)
+data/

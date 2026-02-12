@@ -3,6 +3,7 @@
 Usage:
     python -m scripts.load_to_db data/processed/content_items.json
     python -m scripts.load_to_db data/processed/content_items.json --exercises data/processed/exercises.json
+    python -m scripts.load_to_db data/processed/content_items.json --exercises data/processed/exercises.json --learner-id 1
 """
 
 import argparse
@@ -13,11 +14,13 @@ from pathlib import Path
 
 from sqlalchemy import select
 
-from backend.config import settings
+from backend.config import settings, utcnow
 from backend.database import async_session, engine
 from backend.models import Base
+from backend.models.card import Card
 from backend.models.content_item import ContentItem
 from backend.models.exercise import Exercise
+from backend.models.learner import Learner
 
 
 async def load_content_items(items_path: Path) -> dict[str, int]:
@@ -92,6 +95,49 @@ async def load_exercises(exercises_path: Path, term_to_id: dict[str, int]) -> in
     return loaded
 
 
+async def create_cards(learner_id: int, term_to_id: dict[str, int]) -> int:
+    """Create review cards linking a learner to loaded content items.
+
+    Skips cards that already exist for this learner, making it safe to re-run.
+    Returns the number of cards created.
+    """
+    async with async_session() as session:
+        # Verify the learner exists
+        learner = (
+            await session.execute(select(Learner).where(Learner.id == learner_id))
+        ).scalar_one_or_none()
+        if not learner:
+            logging.error("Learner with id=%d not found", learner_id)
+            raise SystemExit(1)
+
+        # Find which content items already have cards for this learner
+        existing_stmt = select(Card.content_item_id).where(Card.learner_id == learner_id)
+        existing_ids = set((await session.execute(existing_stmt)).scalars().all())
+
+        created = 0
+        now = utcnow()
+        for content_item_id in term_to_id.values():
+            if content_item_id in existing_ids:
+                continue
+            session.add(
+                Card(
+                    learner_id=learner_id,
+                    content_item_id=content_item_id,
+                    stability=0.5,
+                    difficulty=0.3,
+                    due=now,
+                    reps=0,
+                    lapses=0,
+                )
+            )
+            created += 1
+
+        await session.commit()
+
+    logging.info("Created %d cards for learner %d (%d already existed)", created, learner_id, len(existing_ids))
+    return created
+
+
 async def main_async(args: argparse.Namespace) -> None:
     # Ensure tables exist
     async with engine.begin() as conn:
@@ -103,6 +149,11 @@ async def main_async(args: argparse.Namespace) -> None:
     # Load exercises if provided
     if args.exercises:
         await load_exercises(args.exercises, term_to_id)
+
+    # Create cards if learner-id provided
+    if args.learner_id is not None:
+        created = await create_cards(args.learner_id, term_to_id)
+        print(f"Created {created} cards for learner {args.learner_id}.")
 
 
 def main() -> None:
@@ -117,6 +168,12 @@ def main() -> None:
         type=Path,
         default=None,
         help="Path to exercises.json (optional)",
+    )
+    parser.add_argument(
+        "--learner-id",
+        type=int,
+        default=None,
+        help="Create review cards for this learner ID (run 'hindi-srs stats' first to create the default learner)",
     )
     parser.add_argument("-v", "--verbose", action="store_true")
     args = parser.parse_args()
