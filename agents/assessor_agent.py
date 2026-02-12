@@ -143,10 +143,7 @@ class AssessorAgent(BaseAgent):
                 "Review the pattern being tested in this exercise."
             )
         elif error_type == "meaning":
-            parts.append(
-                "The meaning doesn't match. "
-                "Try breaking down the sentence word by word."
-            )
+            parts.append("The meaning doesn't match. Try breaking down the sentence word by word.")
 
         return " ".join(parts)
 
@@ -178,10 +175,7 @@ class AssessorAgent(BaseAgent):
             return True
 
         # Explain partial answers for harder exercise types
-        if assessment.grade == AssessmentGrade.PARTIAL and exercise.exercise_type != "mcq":
-            return True
-
-        return False
+        return assessment.grade == AssessmentGrade.PARTIAL and exercise.exercise_type != "mcq"
 
     def _assess_confidence(self, assessment: Assessment, exercise: Exercise) -> float:
         """How confident we are in this assessment (0-1).

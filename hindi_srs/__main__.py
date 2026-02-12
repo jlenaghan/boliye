@@ -10,6 +10,7 @@ Usage:
 
 import argparse
 import asyncio
+import contextlib
 import json
 import logging
 import time
@@ -103,9 +104,7 @@ async def cmd_review(args: argparse.Namespace) -> None:
                 continue
 
             ex_stmt = (
-                select(Exercise)
-                .where(Exercise.content_item_id == card.content_item_id)
-                .limit(1)
+                select(Exercise).where(Exercise.content_item_id == card.content_item_id).limit(1)
             )
             ex_result = await db.execute(ex_stmt)
             exercise = ex_result.scalar_one_or_none()
@@ -127,10 +126,8 @@ async def cmd_review(args: argparse.Namespace) -> None:
             if exercise.exercise_type == "mcq":
                 options = []
                 if exercise.options:
-                    try:
+                    with contextlib.suppress(json.JSONDecodeError):
                         options = json.loads(exercise.options)
-                    except json.JSONDecodeError:
-                        pass
                 for j, opt in enumerate(options, 1):
                     if is_devanagari(opt):
                         print(f"    {j}.")
@@ -152,10 +149,8 @@ async def cmd_review(args: argparse.Namespace) -> None:
                 idx = int(response) - 1
                 options = []
                 if exercise.options:
-                    try:
+                    with contextlib.suppress(json.JSONDecodeError):
                         options = json.loads(exercise.options)
-                    except json.JSONDecodeError:
-                        pass
                 if 0 <= idx < len(options):
                     response = options[idx]
 
@@ -172,11 +167,13 @@ async def cmd_review(args: argparse.Namespace) -> None:
             else:
                 print(f"  {assessment.feedback}")
                 print()
-                print(render_card_display(
-                    content_item.term,
-                    romanization=content_item.romanization or "",
-                    definition=content_item.definition or "",
-                ))
+                print(
+                    render_card_display(
+                        content_item.term,
+                        romanization=content_item.romanization or "",
+                        definition=content_item.definition or "",
+                    )
+                )
 
             # Get rating (use suggested or ask)
             rating = assessment.suggested_rating
@@ -231,35 +228,43 @@ async def cmd_stats(args: argparse.Namespace) -> None:
 
     async with async_session() as db:
         # Total cards
-        total = (await db.execute(
-            select(func.count(Card.id)).where(Card.learner_id == learner_id)
-        )).scalar() or 0
+        total = (
+            await db.execute(select(func.count(Card.id)).where(Card.learner_id == learner_id))
+        ).scalar() or 0
 
         # Due cards
-        due = (await db.execute(
-            select(func.count(Card.id)).where(
-                and_(Card.learner_id == learner_id, Card.reps > 0, Card.due <= now)
+        due = (
+            await db.execute(
+                select(func.count(Card.id)).where(
+                    and_(Card.learner_id == learner_id, Card.reps > 0, Card.due <= now)
+                )
             )
-        )).scalar() or 0
+        ).scalar() or 0
 
         # New cards
-        new = (await db.execute(
-            select(func.count(Card.id)).where(
-                and_(Card.learner_id == learner_id, Card.reps == 0, Card.lapses == 0)
+        new = (
+            await db.execute(
+                select(func.count(Card.id)).where(
+                    and_(Card.learner_id == learner_id, Card.reps == 0, Card.lapses == 0)
+                )
             )
-        )).scalar() or 0
+        ).scalar() or 0
 
         # Total reviews
-        reviews = (await db.execute(
-            select(func.count(ReviewLog.id)).where(ReviewLog.learner_id == learner_id)
-        )).scalar() or 0
+        reviews = (
+            await db.execute(
+                select(func.count(ReviewLog.id)).where(ReviewLog.learner_id == learner_id)
+            )
+        ).scalar() or 0
 
         # Mature cards
-        mature = (await db.execute(
-            select(func.count(Card.id)).where(
-                and_(Card.learner_id == learner_id, Card.reps >= 5)
+        mature = (
+            await db.execute(
+                select(func.count(Card.id)).where(
+                    and_(Card.learner_id == learner_id, Card.reps >= 5)
+                )
             )
-        )).scalar() or 0
+        ).scalar() or 0
 
     print("\n  Hindi SRS Statistics")
     print(f"  {'Total cards:':<20} {total}")
@@ -277,9 +282,9 @@ async def cmd_add(args: argparse.Namespace) -> None:
 
     async with async_session() as db:
         # Check for duplicate
-        existing = (await db.execute(
-            select(ContentItem).where(ContentItem.term == args.term)
-        )).scalar_one_or_none()
+        existing = (
+            await db.execute(select(ContentItem).where(ContentItem.term == args.term))
+        ).scalar_one_or_none()
 
         if existing:
             print(f"  '{args.term}' already exists (id={existing.id}).")
@@ -311,11 +316,13 @@ async def cmd_add(args: argparse.Namespace) -> None:
         await db.commit()
 
         print("  Added (card ready for review):")
-        print(render_card_display(
-            args.term,
-            romanization=args.romanization or "",
-            definition=args.definition,
-        ))
+        print(
+            render_card_display(
+                args.term,
+                romanization=args.romanization or "",
+                definition=args.definition,
+            )
+        )
 
 
 async def cmd_due(args: argparse.Namespace) -> None:
@@ -325,17 +332,21 @@ async def cmd_due(args: argparse.Namespace) -> None:
     now = utcnow()
 
     async with async_session() as db:
-        due = (await db.execute(
-            select(func.count(Card.id)).where(
-                and_(Card.learner_id == learner_id, Card.reps > 0, Card.due <= now)
+        due = (
+            await db.execute(
+                select(func.count(Card.id)).where(
+                    and_(Card.learner_id == learner_id, Card.reps > 0, Card.due <= now)
+                )
             )
-        )).scalar() or 0
+        ).scalar() or 0
 
-        new = (await db.execute(
-            select(func.count(Card.id)).where(
-                and_(Card.learner_id == learner_id, Card.reps == 0, Card.lapses == 0)
+        new = (
+            await db.execute(
+                select(func.count(Card.id)).where(
+                    and_(Card.learner_id == learner_id, Card.reps == 0, Card.lapses == 0)
+                )
             )
-        )).scalar() or 0
+        ).scalar() or 0
 
     print(f"  {due} cards due, {new} new cards available")
 

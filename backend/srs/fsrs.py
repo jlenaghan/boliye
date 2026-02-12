@@ -24,19 +24,19 @@ from backend.config import utcnow
 # w[7..10]: stability factors per rating
 # w[11..12]: hard/easy penalty/bonus
 DEFAULT_WEIGHTS = [
-    0.4,    # w0: initial stability for Again
-    0.6,    # w1: initial stability for Hard
-    2.4,    # w2: initial stability for Good
-    5.8,    # w3: initial stability for Easy
-    4.93,   # w4: difficulty mean reversion strength
-    0.94,   # w5: difficulty update factor
-    0.86,   # w6: stability decay exponent
-    0.01,   # w7: stability increase base (fail)
-    1.49,   # w8: stability increase factor (success)
-    0.14,   # w9: difficulty-stability interaction
-    0.94,   # w10: stability-stability interaction (power)
-    2.18,   # w11: hard penalty factor
-    0.05,   # w12: easy bonus factor
+    0.4,  # w0: initial stability for Again
+    0.6,  # w1: initial stability for Hard
+    2.4,  # w2: initial stability for Good
+    5.8,  # w3: initial stability for Easy
+    4.93,  # w4: difficulty mean reversion strength
+    0.94,  # w5: difficulty update factor
+    0.86,  # w6: stability decay exponent
+    0.01,  # w7: stability increase base (fail)
+    1.49,  # w8: stability increase factor (success)
+    0.14,  # w9: difficulty-stability interaction
+    0.94,  # w10: stability-stability interaction (power)
+    2.18,  # w11: hard penalty factor
+    0.05,  # w12: easy bonus factor
 ]
 
 # Target retention probability
@@ -52,11 +52,11 @@ MIN_STABILITY = 0.1  # Minimum 0.1 days (~2.4 hours)
 class CardState:
     """The SRS state of a card."""
 
-    stability: float      # Days until retention = target_retention
-    difficulty: float     # 0-1, inherent difficulty
-    due: datetime         # When the card is next due
-    reps: int             # Total successful reviews
-    lapses: int           # Times the card was forgotten (rated Again)
+    stability: float  # Days until retention = target_retention
+    difficulty: float  # 0-1, inherent difficulty
+    due: datetime  # When the card is next due
+    reps: int  # Total successful reviews
+    lapses: int  # Times the card was forgotten (rated Again)
 
 
 @dataclass
@@ -126,7 +126,9 @@ class FSRS:
         review_time = review_time or utcnow()
 
         # Calculate elapsed time and current retrievability
-        elapsed_days = max(0, (review_time - state.due).total_seconds() / 86400 + self._stability_to_interval(state.stability))
+        seconds_since_due = (review_time - state.due).total_seconds()
+        interval = self._stability_to_interval(state.stability)
+        elapsed_days = max(0, seconds_since_due / 86400 + interval)
         retrievability = self._retrievability(elapsed_days, state.stability)
 
         # Update difficulty
@@ -135,9 +137,7 @@ class FSRS:
         # Update stability
         if rating == 1:
             # Lapse: stability is reset (with some memory from previous)
-            new_stability = self._stability_after_fail(
-                state.stability, new_difficulty
-            )
+            new_stability = self._stability_after_fail(state.stability, new_difficulty)
             new_reps = state.reps
             new_lapses = state.lapses + 1
         else:
@@ -239,10 +239,6 @@ class FSRS:
 
         S' = w7 * D^(-w6) * ((S+1)^w10 - 1)
         """
-        new_s = (
-            self.w[7]
-            * difficulty ** (-self.w[6])
-            * ((stability + 1) ** self.w[10] - 1)
-        )
+        new_s = self.w[7] * difficulty ** (-self.w[6]) * ((stability + 1) ** self.w[10] - 1)
         # Ensure new stability is less than old (forgetting should decrease stability)
         return min(new_s, stability * 0.5)

@@ -19,7 +19,9 @@ class Settings(BaseSettings):
     """Application settings loaded from environment variables."""
 
     app_name: str = "Hindi SRS"
-    database_url: str = f"sqlite+aiosqlite:///{Path(__file__).resolve().parent.parent / 'data' / 'hindi_srs.db'}"
+    database_url: str = (
+        f"sqlite+aiosqlite:///{Path(__file__).resolve().parent.parent / 'data' / 'hindi_srs.db'}"
+    )
     anthropic_api_key: str = ""
     anthropic_model: str = "claude-sonnet-4-20250514"
     anthropic_max_retries: int = 3

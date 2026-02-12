@@ -85,13 +85,9 @@ class TutorAgent(BaseAgent):
 
         # Build explanation (LLM or template-based)
         if self.llm is not None and depth != "brief":
-            explanation = self._llm_explanation(
-                assessment, exercise, content_item, ctx, depth
-            )
+            explanation = self._llm_explanation(assessment, exercise, content_item, ctx, depth)
         else:
-            explanation = self._template_explanation(
-                assessment, exercise, content_item, error_type
-            )
+            explanation = self._template_explanation(assessment, exercise, content_item, error_type)
 
         # Generate mnemonic for repeatedly failed items
         mnemonic = None
@@ -142,10 +138,7 @@ class TutorAgent(BaseAgent):
 
     def _count_failures(self, term: str, ctx: LearnerContext) -> int:
         """Count how many times this term has been failed in the session."""
-        return sum(
-            1 for e in ctx.session_reviews
-            if e.term == term and e.grade != "correct"
-        )
+        return sum(1 for e in ctx.session_reviews if e.term == term and e.grade != "correct")
 
     def _llm_explanation(
         self,
@@ -198,7 +191,7 @@ class TutorAgent(BaseAgent):
 
         parts.append(
             f"The correct answer is **{content_item.term}** ({content_item.romanization}) "
-            f"meaning \"{content_item.definition}\"."
+            f'meaning "{content_item.definition}".'
         )
 
         if error_type == "typo":

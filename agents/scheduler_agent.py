@@ -139,8 +139,7 @@ class SchedulerAgent(BaseAgent):
         elif ctx.session_accuracy >= 0.9 and ctx.session_count >= 10:
             new_limit = min(base_new + 5, 20)
             reasoning = (
-                f"Great accuracy ({ctx.session_accuracy:.0%})! Increasing new cards to "
-                f"{new_limit}."
+                f"Great accuracy ({ctx.session_accuracy:.0%})! Increasing new cards to {new_limit}."
             )
         else:
             new_limit = base_new

@@ -134,7 +134,12 @@ async def create_cards(learner_id: int, term_to_id: dict[str, int]) -> int:
 
         await session.commit()
 
-    logging.info("Created %d cards for learner %d (%d already existed)", created, learner_id, len(existing_ids))
+    logging.info(
+        "Created %d cards for learner %d (%d already existed)",
+        created,
+        learner_id,
+        len(existing_ids),
+    )
     return created
 
 

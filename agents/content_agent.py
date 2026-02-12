@@ -69,13 +69,10 @@ class ContentAgent(BaseAgent):
         - If accuracy is dropping, dial back difficulty
         """
         # Get available exercises for this card's content item
-        stmt = (
-            select(Exercise)
-            .where(
-                and_(
-                    Exercise.content_item_id == card.content_item_id,
-                    Exercise.status == "approved",
-                )
+        stmt = select(Exercise).where(
+            and_(
+                Exercise.content_item_id == card.content_item_id,
+                Exercise.status == "approved",
             )
         )
         result = await db.execute(stmt)
@@ -83,13 +80,10 @@ class ContentAgent(BaseAgent):
 
         if not exercises:
             # Fall back to generated (unreviewed) exercises
-            stmt_gen = (
-                select(Exercise)
-                .where(
-                    and_(
-                        Exercise.content_item_id == card.content_item_id,
-                        Exercise.status == "generated",
-                    )
+            stmt_gen = select(Exercise).where(
+                and_(
+                    Exercise.content_item_id == card.content_item_id,
+                    Exercise.status == "generated",
                 )
             )
             result_gen = await db.execute(stmt_gen)
@@ -196,21 +190,21 @@ class ContentAgent(BaseAgent):
             return (
                 f"Generate a multiple-choice question for the Hindi term '{item.term}' "
                 f"(meaning: {item.definition}).\n"
-                "Return JSON: {\"prompt\": \"...\", \"answer\": \"...\", "
-                "\"options\": [\"opt1\", \"opt2\", \"opt3\", \"opt4\"]}"
+                'Return JSON: {"prompt": "...", "answer": "...", '
+                '"options": ["opt1", "opt2", "opt3", "opt4"]}'
             )
         elif exercise_type == "cloze":
             return (
                 f"Generate a fill-in-the-blank exercise for '{item.term}' "
                 f"(meaning: {item.definition}).\n"
                 "Create a Hindi sentence using this term, replace it with ___.\n"
-                "Return JSON: {\"prompt\": \"...\", \"answer\": \"...\"}"
+                'Return JSON: {"prompt": "...", "answer": "..."}'
             )
         else:
             return (
                 f"Generate a translation exercise for '{item.term}' "
                 f"(meaning: {item.definition}).\n"
-                "Return JSON: {\"prompt\": \"...\", \"answer\": \"...\"}"
+                'Return JSON: {"prompt": "...", "answer": "..."}'
             )
 
     def _parse_generated_exercise(

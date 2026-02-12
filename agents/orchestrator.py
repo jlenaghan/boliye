@@ -162,9 +162,7 @@ class Orchestrator:
             content_item = result.scalar_one_or_none()
 
             if content_item is None:
-                logger.error(
-                    "Content item %d not found for card %d", card.content_item_id, card.id
-                )
+                logger.error("Content item %d not found for card %d", card.content_item_id, card.id)
                 session.card_index += 1
                 continue
 
@@ -315,7 +313,8 @@ class Orchestrator:
         """Remove sessions that have exceeded the TTL."""
         now = utcnow()
         expired = [
-            sid for sid, s in self._sessions.items()
+            sid
+            for sid, s in self._sessions.items()
             if (now - s.created_at).total_seconds() > self._session_ttl
         ]
         for sid in expired:
@@ -342,9 +341,7 @@ class Orchestrator:
         level = learner.current_level if learner else "A1"
 
         # Count total reviews
-        count_stmt = select(func.count(ReviewLog.id)).where(
-            ReviewLog.learner_id == learner_id
-        )
+        count_stmt = select(func.count(ReviewLog.id)).where(ReviewLog.learner_id == learner_id)
         total_reviews = (await db.execute(count_stmt)).scalar() or 0
 
         return LearnerContext(

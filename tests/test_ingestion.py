@@ -104,7 +104,9 @@ class TestFileHandlers:
                 f"Vedic Extension char U+{code:04X} found -- Devanagari matra corruption"
             )
 
-    def test_read_pdf_file_missing_library(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_read_pdf_file_missing_library(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         import sys
 
         f = tmp_path / "test.pdf"
@@ -113,7 +115,7 @@ class TestFileHandlers:
         monkeypatch.setitem(sys.modules, "pdfplumber", None)
         try:
             read_pdf_file(f)
-            assert False, "Should have raised ImportError"
+            pytest.fail("Should have raised ImportError")
         except ImportError as e:
             assert "pdfplumber" in str(e)
         finally:
@@ -133,7 +135,7 @@ class TestFileHandlers:
         f.write_bytes(b"fake audio")
         try:
             read_file(f)
-            assert False, "Should have raised ValueError"
+            pytest.fail("Should have raised ValueError")
         except ValueError as e:
             assert "Unsupported" in str(e)
 

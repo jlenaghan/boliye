@@ -143,15 +143,21 @@ class TestTerminalDetection:
 
 class TestSupportsInlineImages:
     def test_kitty_supports(self) -> None:
-        with patch.dict("os.environ", {"TERM": "xterm-kitty", "TERM_PROGRAM": "", "ITERM_SESSION_ID": ""}):
+        with patch.dict(
+            "os.environ", {"TERM": "xterm-kitty", "TERM_PROGRAM": "", "ITERM_SESSION_ID": ""}
+        ):
             assert _supports_inline_images() is True
 
     def test_iterm2_supports(self) -> None:
-        with patch.dict("os.environ", {"TERM": "", "TERM_PROGRAM": "iTerm.app", "ITERM_SESSION_ID": ""}):
+        with patch.dict(
+            "os.environ", {"TERM": "", "TERM_PROGRAM": "iTerm.app", "ITERM_SESSION_ID": ""}
+        ):
             assert _supports_inline_images() is True
 
     def test_plain_terminal_no_support(self) -> None:
-        with patch.dict("os.environ", {"TERM": "xterm", "TERM_PROGRAM": "", "ITERM_SESSION_ID": ""}, clear=True):
+        with patch.dict(
+            "os.environ", {"TERM": "xterm", "TERM_PROGRAM": "", "ITERM_SESSION_ID": ""}, clear=True
+        ):
             assert _supports_inline_images() is False
 
 
@@ -168,7 +174,9 @@ class TestRenderDevanagari:
 
 class TestRenderIfDevanagari:
     def test_returns_text_without_image_support(self) -> None:
-        with patch.dict("os.environ", {"TERM": "xterm", "TERM_PROGRAM": "", "ITERM_SESSION_ID": ""}, clear=True):
+        with patch.dict(
+            "os.environ", {"TERM": "xterm", "TERM_PROGRAM": "", "ITERM_SESSION_ID": ""}, clear=True
+        ):
             result = render_if_devanagari("नमस्ते")
             assert result.strip() == "नमस्ते"
 
@@ -179,7 +187,9 @@ class TestRenderIfDevanagari:
 
 class TestDisplayMixedText:
     def test_prints_text_when_no_image_support(self) -> None:
-        with patch.dict("os.environ", {"TERM": "xterm", "TERM_PROGRAM": "", "ITERM_SESSION_ID": ""}, clear=True):
+        with patch.dict(
+            "os.environ", {"TERM": "xterm", "TERM_PROGRAM": "", "ITERM_SESSION_ID": ""}, clear=True
+        ):
             captured = io.StringIO()
             with patch("sys.stdout", captured):
                 display_mixed_text("What is: नमस्ते?")
@@ -190,7 +200,9 @@ class TestDisplayMixedText:
 
 class TestDisplayCard:
     def test_prints_bordered_output(self) -> None:
-        with patch.dict("os.environ", {"TERM": "xterm", "TERM_PROGRAM": "", "ITERM_SESSION_ID": ""}, clear=True):
+        with patch.dict(
+            "os.environ", {"TERM": "xterm", "TERM_PROGRAM": "", "ITERM_SESSION_ID": ""}, clear=True
+        ):
             captured = io.StringIO()
             with patch("sys.stdout", captured):
                 display_card("नमस्ते", romanization="namaste", definition="hello")
@@ -202,7 +214,9 @@ class TestDisplayCard:
             assert "नमस्ते" in output
 
     def test_without_metadata(self) -> None:
-        with patch.dict("os.environ", {"TERM": "xterm", "TERM_PROGRAM": "", "ITERM_SESSION_ID": ""}, clear=True):
+        with patch.dict(
+            "os.environ", {"TERM": "xterm", "TERM_PROGRAM": "", "ITERM_SESSION_ID": ""}, clear=True
+        ):
             captured = io.StringIO()
             with patch("sys.stdout", captured):
                 display_card("क")

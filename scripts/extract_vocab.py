@@ -78,14 +78,36 @@ def classify_topics(filename: str, definition: str) -> list[str]:
         "weather": ["weather", "rain", "snow", "humid", "cloudy", "sunny", "wind", "storm"],
         "travel": ["taxi", "train", "airport", "boarding", "bus", "travel", "trip"],
         "shopping": ["shop", "buy", "gift", "price", "costly", "cheap", "market"],
-        "food_drink": ["breakfast", "dinner", "coffee", "beer", "restaurant", "samosa", "food", "eat", "drink", "lunch"],
+        "food_drink": [
+            "breakfast",
+            "dinner",
+            "coffee",
+            "beer",
+            "restaurant",
+            "samosa",
+            "food",
+            "eat",
+            "drink",
+            "lunch",
+        ],
         "daily_routine": ["routine", "morning", "office", "leave", "reach", "ready", "wake"],
         "work": ["office", "work", "meeting", "schedule", "boss", "job", "studio", "finish work"],
         "family": ["sister", "brother", "mother", "father", "parent", "family"],
         "emotions": ["emotion", "love", "angry", "happy", "sad", "feel", "afraid"],
         "directions": ["behind", "center", "direction", "way", "shorter", "between"],
-        "grammar_pattern": ["verb", "tense", "present simple", "past", "future", "subjunctive",
-                           "comparative", "superlative", "plural", "adjective", "postposition"],
+        "grammar_pattern": [
+            "verb",
+            "tense",
+            "present simple",
+            "past",
+            "future",
+            "subjunctive",
+            "comparative",
+            "superlative",
+            "plural",
+            "adjective",
+            "postposition",
+        ],
         "idiom": ["idiom", "proverb", "saying", "literal translation"],
         "religion_culture": ["culture", "india", "bollywood", "diwali"],
         "numbers": ["number", "count"],
@@ -118,14 +140,16 @@ def extract_from_idiom_pdf(text: str, filename: str) -> list[dict]:
         literal = match.group(4).strip()
         meaning = match.group(5).strip()
 
-        items.append({
-            "term": hindi,
-            "definition": meaning,
-            "romanization": roman,
-            "context": f"Literal: {literal}",
-            "content_type": "phrase",
-            "source_file": filename,
-        })
+        items.append(
+            {
+                "term": hindi,
+                "definition": meaning,
+                "romanization": roman,
+                "context": f"Literal: {literal}",
+                "content_type": "phrase",
+                "source_file": filename,
+            }
+        )
     return items
 
 
@@ -151,14 +175,16 @@ def extract_means_patterns(text: str, filename: str) -> list[dict]:
                     context = lines[j].strip()
                     break
 
-            items.append({
-                "term": hindi,
-                "definition": defn,
-                "romanization": roman,
-                "context": context,
-                "content_type": "vocab" if " " not in hindi else "phrase",
-                "source_file": filename,
-            })
+            items.append(
+                {
+                    "term": hindi,
+                    "definition": defn,
+                    "romanization": roman,
+                    "context": context,
+                    "content_type": "vocab" if " " not in hindi else "phrase",
+                    "source_file": filename,
+                }
+            )
 
     return items
 
@@ -178,10 +204,9 @@ def extract_translated_as(text: str, filename: str) -> list[dict]:
 
         # Find Hindi text in the rest of the line or next lines
         hindi_match = HINDI_CHUNK_RE.search(rest)
-        if not hindi_match:
+        if not hindi_match and i + 1 < len(lines):
             # Check next line
-            if i + 1 < len(lines):
-                hindi_match = HINDI_CHUNK_RE.search(lines[i + 1])
+            hindi_match = HINDI_CHUNK_RE.search(lines[i + 1])
 
         if not hindi_match:
             continue
@@ -196,14 +221,16 @@ def extract_translated_as(text: str, filename: str) -> list[dict]:
         if hindi_pos > 0:
             roman = rest[:hindi_pos].strip().rstrip("–- ")
 
-        items.append({
-            "term": hindi,
-            "definition": english,
-            "romanization": roman,
-            "context": "",
-            "content_type": "phrase" if " " in hindi else "vocab",
-            "source_file": filename,
-        })
+        items.append(
+            {
+                "term": hindi,
+                "definition": english,
+                "romanization": roman,
+                "context": "",
+                "content_type": "phrase" if " " in hindi else "vocab",
+                "source_file": filename,
+            }
+        )
 
     return items
 
@@ -214,12 +241,12 @@ def extract_vocabulary_table(text: str, filename: str) -> list[dict]:
     Pattern: Hindi text on one line, romanization on next, English on next.
     """
     items = []
-    lines = [l.strip() for l in text.split("\n") if l.strip()]
+    lines = [line.strip() for line in text.split("\n") if line.strip()]
 
     for i in range(len(lines) - 1):
         line = lines[i]
         # Check if this line is primarily Hindi
-        hindi_chars = sum(1 for c in line if "\u0900" <= c <= "\u097F")
+        hindi_chars = sum(1 for c in line if "\u0900" <= c <= "\u097f")
         total_chars = len(line.replace(" ", ""))
 
         if total_chars > 0 and hindi_chars / total_chars > 0.6 and len(line) > 2:
@@ -230,7 +257,7 @@ def extract_vocabulary_table(text: str, filename: str) -> list[dict]:
             defn = ""
             if i + 1 < len(lines):
                 next_line = lines[i + 1]
-                next_hindi = sum(1 for c in next_line if "\u0900" <= c <= "\u097F")
+                next_hindi = sum(1 for c in next_line if "\u0900" <= c <= "\u097f")
                 if next_hindi == 0 and len(next_line) > 2:
                     # This is likely romanization or English
                     if any(c in next_line for c in "āīūéñṛ") or next_line[0].islower():
@@ -243,14 +270,16 @@ def extract_vocabulary_table(text: str, filename: str) -> list[dict]:
 
             # Only add if we got a definition
             if defn and len(defn) > 2 and not defn.startswith("http"):
-                items.append({
-                    "term": hindi,
-                    "definition": defn,
-                    "romanization": roman,
-                    "context": "",
-                    "content_type": "phrase" if " " in hindi else "vocab",
-                    "source_file": filename,
-                })
+                items.append(
+                    {
+                        "term": hindi,
+                        "definition": defn,
+                        "romanization": roman,
+                        "context": "",
+                        "content_type": "phrase" if " " in hindi else "vocab",
+                        "source_file": filename,
+                    }
+                )
 
     return items
 
@@ -287,14 +316,19 @@ def clean_item(item: dict) -> dict | None:
         return None
 
     # Discard if term is mostly non-Devanagari
-    hindi_chars = sum(1 for c in term if "\u0900" <= c <= "\u097F")
+    hindi_chars = sum(1 for c in term if "\u0900" <= c <= "\u097f")
     if hindi_chars < 1:
         return None
 
     # Discard boilerplate
     boilerplate = [
-        "hindipod101", "click here", "free lifetime", "patreon",
-        "innovative language", "the fastest", "download",
+        "hindipod101",
+        "click here",
+        "free lifetime",
+        "patreon",
+        "innovative language",
+        "the fastest",
+        "download",
     ]
     if any(bp in defn.lower() for bp in boilerplate):
         return None
@@ -307,12 +341,22 @@ def clean_item(item: dict) -> dict | None:
 
     # Discard if definition is a meta-instruction rather than a translation
     meta_phrases = [
-        "translated as", "translated into", "shall we do the role play",
-        "the line is translated", "these lines are translated",
-        "i'll repeat", "i'll say it again", "listener",
-        "shall we give", "here we go", "ready?",
-        "let's do", "once again", "changed r",
-        "हिन्दी में अनुवाद", "अनुवाद कीजिए",
+        "translated as",
+        "translated into",
+        "shall we do the role play",
+        "the line is translated",
+        "these lines are translated",
+        "i'll repeat",
+        "i'll say it again",
+        "listener",
+        "shall we give",
+        "here we go",
+        "ready?",
+        "let's do",
+        "once again",
+        "changed r",
+        "हिन्दी में अनुवाद",
+        "अनुवाद कीजिए",
     ]
     if any(mp in defn.lower() for mp in meta_phrases):
         return None

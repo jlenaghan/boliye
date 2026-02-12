@@ -66,9 +66,12 @@ select = [
 convention = "google"
 
 [tool.ruff.lint.per-file-ignores]
-"tests/*" = ["D"]  # No docstrings required in tests
-"scripts/*" = ["D"]  # No docstrings required in scripts
+"tests/*" = ["D", "E501", "RUF059"]  # Tests: relaxed rules
+"scripts/*" = ["D", "RUF001", "RUF003", "RUF005", "E501", "F841", "B007", "C901", "PTH123"]  # Scripts: relaxed rules
 "migrations/*" = ["D"]  # Alembic auto-generated files
+"backend/api/*_router.py" = ["B008"]  # FastAPI Depends() pattern
+"hindi_srs/__main__.py" = ["C901"]  # CLI complexity acceptable
+"ingestion/pipeline.py" = ["C901"]  # Pipeline orchestration complexity acceptable
 
 [tool.mypy]
 python_version = "3.11"

@@ -70,9 +70,11 @@ def read_pdf_file(path: Path) -> RawDocument:
     """
     try:
         import pdfplumber
-    except ImportError:
+    except ImportError as err:
         logger.warning("pdfplumber not installed, skipping %s", path)
-        raise ImportError("Install pdfplumber to process .pdf files: pip install pdfplumber")
+        raise ImportError(
+            "Install pdfplumber to process .pdf files: pip install pdfplumber"
+        ) from err
 
     pages = []
     with pdfplumber.open(str(path), unicode_norm="NFC") as pdf:
@@ -96,9 +98,11 @@ def read_docx_file(path: Path) -> RawDocument:
     """
     try:
         import docx
-    except ImportError:
+    except ImportError as err:
         logger.warning("python-docx not installed, skipping %s", path)
-        raise ImportError("Install python-docx to process .docx files: pip install python-docx")
+        raise ImportError(
+            "Install python-docx to process .docx files: pip install python-docx"
+        ) from err
 
     doc = docx.Document(str(path))
     paragraphs = [p.text for p in doc.paragraphs if p.text.strip()]

@@ -30,10 +30,10 @@ HINDI_EQUIVALENCES: list[tuple[str, str]] = [
 class AssessmentGrade(Enum):
     """How correct a response is."""
 
-    CORRECT = "correct"           # Exact or near-exact match
-    CLOSE = "close"               # Minor error (typo, small variation)
-    PARTIAL = "partial"           # Shows understanding but significant errors
-    INCORRECT = "incorrect"       # Fundamentally wrong
+    CORRECT = "correct"  # Exact or near-exact match
+    CLOSE = "close"  # Minor error (typo, small variation)
+    PARTIAL = "partial"  # Shows understanding but significant errors
+    INCORRECT = "incorrect"  # Fundamentally wrong
 
 
 @dataclass
@@ -41,18 +41,18 @@ class Assessment:
     """The result of assessing a learner's response."""
 
     grade: AssessmentGrade
-    suggested_rating: int        # 1=Again, 2=Hard, 3=Good, 4=Easy
-    feedback: str                # Explanation for the learner
-    expected: str                # What the correct answer was
-    actual: str                  # What the learner answered
+    suggested_rating: int  # 1=Again, 2=Hard, 3=Good, 4=Easy
+    feedback: str  # Explanation for the learner
+    expected: str  # What the correct answer was
+    actual: str  # What the learner answered
     is_exact_match: bool = False
 
 
 # Grade to suggested rating mapping
 GRADE_TO_RATING = {
-    AssessmentGrade.CORRECT: 3,    # Good — correct recall (not Easy; that's reserved for self-rating)
-    AssessmentGrade.CLOSE: 3,      # Good — minor issues
-    AssessmentGrade.PARTIAL: 2,    # Hard — needs more work
+    AssessmentGrade.CORRECT: 3,  # Good - correct recall (not Easy; reserved for self-rating)
+    AssessmentGrade.CLOSE: 3,  # Good - minor issues
+    AssessmentGrade.PARTIAL: 2,  # Hard — needs more work
     AssessmentGrade.INCORRECT: 1,  # Again
 }
 

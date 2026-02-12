@@ -1,6 +1,5 @@
 """Tests for CLI commands (non-interactive paths)."""
 
-
 import pytest
 
 from hindi_srs.__main__ import ensure_db, ensure_learner

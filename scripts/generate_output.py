@@ -20,7 +20,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from ingestion.file_handlers import SUPPORTED_EXTENSIONS, read_file
 
 DEVANAGARI_RANGE = range(0x0900, 0x0980)
-REPLACEMENT_CHAR = '\ufffd'
+REPLACEMENT_CHAR = "\ufffd"
 CORPUS_DIR = Path.home() / "hindi-corpus"
 OUTPUT_DIR = Path(__file__).parent.parent / "data" / "processed"
 
@@ -44,9 +44,9 @@ def has_devanagari(text: str) -> bool:
 
 
 def clean_text(text: str) -> str:
-    text = re.sub(r'[_*#]+', '', text)
-    text = ' '.join(text.split())
-    return unicodedata.normalize('NFC', text).strip()
+    text = re.sub(r"[_*#]+", "", text)
+    text = " ".join(text.split())
+    return unicodedata.normalize("NFC", text).strip()
 
 
 def infer_cefr(text: str) -> tuple[str, float]:
@@ -79,88 +79,109 @@ def infer_topics(hindi: str, english: str) -> list[str]:
 
 def parse_markdown(content: str, source_file: str) -> list[ContentItem]:
     items = []
-    lines = content.split('\n')
+    lines = content.split("\n")
     i = 0
 
     while i < len(lines):
         line = lines[i].strip()
-        if not line or line in ['-', '--'] or (line.startswith('#') and not has_devanagari(line)):
+        if not line or line in ["-", "--"] or (line.startswith("#") and not has_devanagari(line)):
             i += 1
             continue
 
         # Pattern 1: "- Hindi" with indented romanization/definition
-        if line.startswith('- ') and has_devanagari(line):
+        if line.startswith("- ") and has_devanagari(line):
             hindi = clean_text(line[2:])
             romanization, definition = "", ""
             j = i + 1
-            while j < len(lines) and lines[j].startswith('    '):
+            while j < len(lines) and lines[j].startswith("    "):
                 subline = lines[j].strip()
-                if subline.startswith('__') and '__' in subline[2:]:
-                    romanization = re.sub(r'__([^_]+)__', r'\1', subline).strip()
-                elif subline.startswith('- ') and not has_devanagari(subline):
+                if subline.startswith("__") and "__" in subline[2:]:
+                    romanization = re.sub(r"__([^_]+)__", r"\1", subline).strip()
+                elif subline.startswith("- ") and not has_devanagari(subline):
                     definition = clean_text(subline[2:])
                 elif not has_devanagari(subline) and not romanization:
-                    romanization = subline.lstrip('- ')
+                    romanization = subline.lstrip("- ")
                 j += 1
 
             if hindi and definition:
                 cefr, conf = infer_cefr(hindi)
-                items.append(ContentItem(
-                    term=hindi, definition=definition, romanization=romanization,
-                    content_type="phrase" if len(hindi.split()) > 2 else "vocab",
-                    source_file=source_file, cefr_level=cefr, cefr_confidence=conf,
-                    topics=json.dumps(infer_topics(hindi, definition))
-                ))
+                items.append(
+                    ContentItem(
+                        term=hindi,
+                        definition=definition,
+                        romanization=romanization,
+                        content_type="phrase" if len(hindi.split()) > 2 else "vocab",
+                        source_file=source_file,
+                        cefr_level=cefr,
+                        cefr_confidence=conf,
+                        topics=json.dumps(infer_topics(hindi, definition)),
+                    )
+                )
             i = j
             continue
 
         # Pattern 2: "Hindi // English"
-        if '//' in line and has_devanagari(line):
-            parts = line.split('//')
+        if "//" in line and has_devanagari(line):
+            parts = line.split("//")
             if len(parts) >= 2:
-                hindi = clean_text(parts[0].lstrip('- '))
+                hindi = clean_text(parts[0].lstrip("- "))
                 definition = clean_text(parts[1])
                 if hindi and definition:
                     cefr, conf = infer_cefr(hindi)
-                    items.append(ContentItem(
-                        term=hindi, definition=definition,
-                        content_type="phrase" if len(hindi.split()) > 2 else "vocab",
-                        source_file=source_file, cefr_level=cefr, cefr_confidence=conf,
-                        topics=json.dumps(infer_topics(hindi, definition))
-                    ))
+                    items.append(
+                        ContentItem(
+                            term=hindi,
+                            definition=definition,
+                            content_type="phrase" if len(hindi.split()) > 2 else "vocab",
+                            source_file=source_file,
+                            cefr_level=cefr,
+                            cefr_confidence=conf,
+                            topics=json.dumps(infer_topics(hindi, definition)),
+                        )
+                    )
             i += 1
             continue
 
         # Pattern 3: "### Hindi" followed by English
-        if line.startswith('### ') and has_devanagari(line):
+        if line.startswith("### ") and has_devanagari(line):
             hindi = clean_text(line[4:])
             if i + 1 < len(lines):
                 next_line = lines[i + 1].strip()
-                if next_line and not has_devanagari(next_line) and not next_line.startswith('#'):
-                    definition = clean_text(next_line.lstrip('- '))
+                if next_line and not has_devanagari(next_line) and not next_line.startswith("#"):
+                    definition = clean_text(next_line.lstrip("- "))
                     cefr, conf = infer_cefr(hindi)
-                    items.append(ContentItem(
-                        term=hindi, definition=definition,
-                        content_type="phrase" if len(hindi.split()) > 2 else "vocab",
-                        source_file=source_file, cefr_level=cefr, cefr_confidence=conf,
-                        topics=json.dumps(infer_topics(hindi, definition))
-                    ))
+                    items.append(
+                        ContentItem(
+                            term=hindi,
+                            definition=definition,
+                            content_type="phrase" if len(hindi.split()) > 2 else "vocab",
+                            source_file=source_file,
+                            cefr_level=cefr,
+                            cefr_confidence=conf,
+                            topics=json.dumps(infer_topics(hindi, definition)),
+                        )
+                    )
                     i += 2
                     continue
 
         # Pattern 4: "Hindi" followed by "- English"
-        if line.startswith('- ') and has_devanagari(line) and i + 1 < len(lines):
+        if line.startswith("- ") and has_devanagari(line) and i + 1 < len(lines):
             hindi = clean_text(line[2:])
             next_line = lines[i + 1].strip()
-            if next_line.startswith('- ') and not has_devanagari(next_line):
+            if next_line.startswith("- ") and not has_devanagari(next_line):
                 definition = clean_text(next_line[2:])
                 cefr, conf = infer_cefr(hindi)
-                items.append(ContentItem(
-                    term=hindi, definition=definition,
-                    content_type="phrase" if len(hindi.split()) > 2 else "vocab",
-                    source_file=source_file, cefr_level=cefr, cefr_confidence=conf,
-                    topics=json.dumps(infer_topics(hindi, definition))
-                ))
+                items.append(
+                    ContentItem(
+                        term=hindi,
+                        definition=definition,
+                        content_type="phrase" if len(hindi.split()) > 2 else "vocab",
+                        source_file=source_file,
+                        cefr_level=cefr,
+                        cefr_confidence=conf,
+                        topics=json.dumps(infer_topics(hindi, definition)),
+                    )
+                )
                 i += 2
                 continue
 
@@ -174,8 +195,8 @@ def parse_pdf(content: str, source_file: str) -> list[ContentItem]:
     if content.count(REPLACEMENT_CHAR) > 10:
         return []
 
-    for sep in [' - ', ' – ', ' = ', ': ']:
-        for line in content.split('\n'):
+    for sep in [" - ", " – ", " = ", ": "]:
+        for line in content.split("\n"):
             line = line.strip()
             if REPLACEMENT_CHAR in line or sep not in line:
                 continue
@@ -198,12 +219,17 @@ def parse_pdf(content: str, source_file: str) -> list[ContentItem]:
 
             if len(hindi) > 2 and len(english) > 2 and len(english) < 200:
                 cefr, conf = infer_cefr(hindi)
-                items.append(ContentItem(
-                    term=clean_text(hindi), definition=clean_text(english),
-                    content_type="phrase" if len(hindi.split()) > 2 else "vocab",
-                    source_file=source_file, cefr_level=cefr, cefr_confidence=conf,
-                    topics=json.dumps(infer_topics(hindi, english))
-                ))
+                items.append(
+                    ContentItem(
+                        term=clean_text(hindi),
+                        definition=clean_text(english),
+                        content_type="phrase" if len(hindi.split()) > 2 else "vocab",
+                        source_file=source_file,
+                        cefr_level=cefr,
+                        cefr_confidence=conf,
+                        topics=json.dumps(infer_topics(hindi, english)),
+                    )
+                )
 
     return items
 
@@ -212,7 +238,7 @@ def process_corpus() -> list[ContentItem]:
     all_items = []
 
     for ext in SUPPORTED_EXTENSIONS:
-        for filepath in sorted(CORPUS_DIR.rglob(f'*{ext}')):
+        for filepath in sorted(CORPUS_DIR.rglob(f"*{ext}")):
             if filepath.is_dir():
                 continue
             try:
@@ -221,7 +247,7 @@ def process_corpus() -> list[ContentItem]:
                     print(f"Skip corrupted: {filepath.name}")
                     continue
 
-                if ext in ['.md', '.txt']:
+                if ext in [".md", ".txt"]:
                     items = parse_markdown(doc.content, filepath.name)
                 else:
                     items = parse_pdf(doc.content, filepath.name)
@@ -238,7 +264,7 @@ def process_corpus() -> list[ContentItem]:
 def deduplicate(items: list[ContentItem]) -> list[ContentItem]:
     seen = {}
     for item in items:
-        key = unicodedata.normalize('NFC', item.term.lower().strip())
+        key = unicodedata.normalize("NFC", item.term.lower().strip())
         if key not in seen or len(item.definition) > len(seen[key].definition):
             seen[key] = item
     return list(seen.values())
@@ -256,25 +282,35 @@ def generate_exercises(items: list[ContentItem]) -> list[dict]:
         if len(wrong) >= 3:
             options = [item.definition] + random.sample(wrong, 3)
             random.shuffle(options)
-            exercises.append({
-                "term": item.term, "exercise_type": "mcq",
-                "prompt": f"What is the meaning of: {item.term}?",
-                "answer": item.definition, "options": options,
-                "status": "generated", "generation_model": "local",
-                "prompt_version": "v1"
-            })
+            exercises.append(
+                {
+                    "term": item.term,
+                    "exercise_type": "mcq",
+                    "prompt": f"What is the meaning of: {item.term}?",
+                    "answer": item.definition,
+                    "options": options,
+                    "status": "generated",
+                    "generation_model": "local",
+                    "prompt_version": "v1",
+                }
+            )
 
         words = item.term.split()
         if len(words) >= 3:
             idx = random.randint(1, len(words) - 2)
-            cloze = ' '.join(words[:idx] + ['___'] + words[idx+1:])
-            exercises.append({
-                "term": item.term, "exercise_type": "cloze",
-                "prompt": f"Fill in the blank: {cloze}",
-                "answer": words[idx], "options": [],
-                "status": "generated", "generation_model": "local",
-                "prompt_version": "v1"
-            })
+            cloze = " ".join(words[:idx] + ["___"] + words[idx + 1 :])
+            exercises.append(
+                {
+                    "term": item.term,
+                    "exercise_type": "cloze",
+                    "prompt": f"Fill in the blank: {cloze}",
+                    "answer": words[idx],
+                    "options": [],
+                    "status": "generated",
+                    "generation_model": "local",
+                    "prompt_version": "v1",
+                }
+            )
 
     return exercises
 
@@ -290,13 +326,13 @@ def main():
     print(f"After dedup: {len(items)} items")
 
     # Save content items
-    with open(OUTPUT_DIR / "content_items.json", 'w', encoding='utf-8') as f:
+    with open(OUTPUT_DIR / "content_items.json", "w", encoding="utf-8") as f:
         json.dump([asdict(i) for i in items], f, ensure_ascii=False, indent=2)
     print("Saved content_items.json")
 
     # Generate exercises
     exercises = generate_exercises(items)
-    with open(OUTPUT_DIR / "exercises.json", 'w', encoding='utf-8') as f:
+    with open(OUTPUT_DIR / "exercises.json", "w", encoding="utf-8") as f:
         json.dump(exercises, f, ensure_ascii=False, indent=2)
     print(f"Saved {len(exercises)} exercises")
 

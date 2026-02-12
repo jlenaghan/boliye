@@ -18,8 +18,8 @@ logger = logging.getLogger(__name__)
 
 # Exercise type difficulty ranking (easier first)
 EXERCISE_DIFFICULTY = {
-    "mcq": 1,       # Recognition - easiest
-    "cloze": 2,     # Recall with context
+    "mcq": 1,  # Recognition - easiest
+    "cloze": 2,  # Recall with context
     "translation": 3,  # Full production - hardest
 }
 
@@ -52,13 +52,10 @@ class ExerciseSelector:
             An Exercise, or None if no exercises exist for this card's content.
         """
         # Fetch all approved/generated exercises for this card's content item
-        stmt = (
-            select(Exercise)
-            .where(
-                and_(
-                    Exercise.content_item_id == card.content_item_id,
-                    Exercise.status.in_(["generated", "approved"]),
-                )
+        stmt = select(Exercise).where(
+            and_(
+                Exercise.content_item_id == card.content_item_id,
+                Exercise.status.in_(["generated", "approved"]),
             )
         )
         result = await session.execute(stmt)

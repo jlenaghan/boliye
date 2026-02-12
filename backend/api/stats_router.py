@@ -49,9 +49,7 @@ async def get_learner_stats(
     cards_mature = (await db.execute(mature_stmt)).scalar() or 0
 
     # Total reviews
-    reviews_stmt = select(func.count(ReviewLog.id)).where(
-        ReviewLog.learner_id == learner_id
-    )
+    reviews_stmt = select(func.count(ReviewLog.id)).where(ReviewLog.learner_id == learner_id)
     total_reviews = (await db.execute(reviews_stmt)).scalar() or 0
 
     # Average retention (from recent reviews: % rated >= 3)

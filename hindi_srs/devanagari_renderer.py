@@ -23,6 +23,7 @@ import io
 import os
 import shutil
 import sys
+from pathlib import Path
 
 _PILLOW_AVAILABLE = False
 try:
@@ -81,11 +82,11 @@ def _supports_inline_images() -> bool:
 def _find_font() -> str | None:
     """Return the first available Devanagari font path, or None."""
     env_font = os.environ.get("HINDI_SRS_FONT")
-    if env_font and os.path.isfile(env_font):
+    if env_font and Path(env_font).is_file():
         return env_font
 
     for path in _FONT_SEARCH_PATHS:
-        if os.path.isfile(path):
+        if Path(path).is_file():
             return path
     return None
 
@@ -373,8 +374,10 @@ def _fallback_render(text: str, indent: str = "  ") -> str:
     """Simple bordered text for testing."""
     inner = f" {text} "
     width = len(inner) + 2
-    return "\n".join([
-        f"{indent}╭{'─' * width}╮",
-        f"{indent}│ {inner} │",
-        f"{indent}╰{'─' * width}╯",
-    ])
+    return "\n".join(
+        [
+            f"{indent}╭{'─' * width}╮",
+            f"{indent}│ {inner} │",
+            f"{indent}╰{'─' * width}╯",
+        ]
+    )

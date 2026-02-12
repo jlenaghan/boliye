@@ -1,5 +1,6 @@
 """API routes for review sessions."""
 
+import contextlib
 import json
 import logging
 import uuid
@@ -68,10 +69,8 @@ async def session_next(
     # Parse MCQ options if present
     options = None
     if session_card.exercise.options:
-        try:
+        with contextlib.suppress(json.JSONDecodeError):
             options = json.loads(session_card.exercise.options)
-        except json.JSONDecodeError:
-            pass
 
     return ExerciseResponse(
         card_id=session_card.card.id,
