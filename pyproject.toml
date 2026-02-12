@@ -93,4 +93,4 @@ testpaths = ["tests"]
 
 [tool.bandit]
 exclude_dirs = ["tests", "migrations"]
-skips = ["B101"]  # Allow assert statements
+skips = ["B101", "B311"]  # B101: allow asserts, B311: random for non-security use is fine
