@@ -20,7 +20,7 @@ jobs:
         run: uv python install 3.11
 
       - name: Install dependencies
-        run: uv sync --dev
+        run: uv sync --extra dev
 
       - name: Run Ruff linter
         run: uv run ruff check .
@@ -44,7 +44,7 @@ jobs:
         run: uv python install 3.11
 
       - name: Install dependencies
-        run: uv sync --dev
+        run: uv sync --extra dev
 
       - name: Run tests with coverage
         run: uv run pytest --cov=. --cov-report=xml --cov-report=term-missing
@@ -69,7 +69,7 @@ jobs:
         run: uv python install 3.11
 
       - name: Install dependencies
-        run: uv sync --dev
+        run: uv sync --extra dev
 
       - name: Run Bandit security scan
         run: uv run bandit -r backend agents ingestion hindi_srs -c pyproject.toml
