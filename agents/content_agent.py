@@ -14,16 +14,14 @@ import logging
 import random
 from dataclasses import dataclass
 
-from sqlalchemy import and_, func, select
+from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from agents.base import BaseAgent, LearnerContext
 from backend.config import settings
-from backend.llm_client import LLMClient
 from backend.models.card import Card
 from backend.models.content_item import ContentItem
 from backend.models.exercise import Exercise
-from backend.models.review_log import ReviewLog
 
 logger = logging.getLogger(__name__)
 
@@ -48,10 +46,12 @@ class ContentAgent(BaseAgent):
 
     @property
     def name(self) -> str:
+        """Return the agent identifier."""
         return "content"
 
     @property
     def description(self) -> str:
+        """Return what this agent does."""
         return "Selects exercises, manages variety and difficulty progression"
 
     async def select_exercise(

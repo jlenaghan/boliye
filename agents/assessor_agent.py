@@ -13,7 +13,6 @@ import logging
 from dataclasses import dataclass
 
 from agents.base import BaseAgent, LearnerContext
-from backend.llm_client import LLMClient
 from backend.models.exercise import Exercise
 from backend.srs.assessment import (
     Assessment,
@@ -42,10 +41,12 @@ class AssessorAgent(BaseAgent):
 
     @property
     def name(self) -> str:
+        """Return the agent identifier."""
         return "assessor"
 
     @property
     def description(self) -> str:
+        """Return what this agent does."""
         return "Evaluates learner responses with detailed feedback and error classification"
 
     def assess(
@@ -76,8 +77,8 @@ class AssessorAgent(BaseAgent):
         # Step 4: Determine if explanation is needed
         should_explain = self._should_explain(base, ctx, exercise)
 
-        # Step 5: Assess confidence
-        confidence = self._assess_confidence(base, exercise)
+        # Step 5: Assess confidence (clamped to valid range)
+        confidence = max(0.0, min(1.0, self._assess_confidence(base, exercise)))
 
         return DetailedAssessment(
             assessment=base,

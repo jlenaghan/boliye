@@ -1,6 +1,5 @@
 """Tests for CLI commands (non-interactive paths)."""
 
-import asyncio
 
 import pytest
 

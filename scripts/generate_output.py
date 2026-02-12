@@ -8,15 +8,16 @@ and generates properly-encoded Devanagari output.
 import json
 import random
 import re
+
+# Add project to path
+import sys
 import unicodedata
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
-# Add project to path
-import sys
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from ingestion.file_handlers import read_file, SUPPORTED_EXTENSIONS
+from ingestion.file_handlers import SUPPORTED_EXTENSIONS, read_file
 
 DEVANAGARI_RANGE = range(0x0900, 0x0980)
 REPLACEMENT_CHAR = '\ufffd'
@@ -291,7 +292,7 @@ def main():
     # Save content items
     with open(OUTPUT_DIR / "content_items.json", 'w', encoding='utf-8') as f:
         json.dump([asdict(i) for i in items], f, ensure_ascii=False, indent=2)
-    print(f"Saved content_items.json")
+    print("Saved content_items.json")
 
     # Generate exercises
     exercises = generate_exercises(items)

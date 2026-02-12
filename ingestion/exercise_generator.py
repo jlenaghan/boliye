@@ -4,7 +4,9 @@ import json
 import logging
 
 from backend.llm_client import LLMClient
+from ingestion.constants import DEFAULT_BATCH_SIZE, DEFAULT_MAX_TOKENS, DEFAULT_TEMPERATURE
 from ingestion.extractor import ExtractedItem
+from ingestion.utils import batch_items, parse_llm_json_response
 
 logger = logging.getLogger(__name__)
 
@@ -66,7 +68,7 @@ Return ONLY a JSON array of exercise objects."""
 def generate_exercises(
     items: list[ExtractedItem],
     llm: LLMClient,
-    batch_size: int = 20,
+    batch_size: int = DEFAULT_BATCH_SIZE,
     exercise_types: list[str] | None = None,
 ) -> list[dict]:
     """Generate exercises for content items.
@@ -87,16 +89,7 @@ def generate_exercises(
 
     for ex_type in exercise_types:
         logger.info("Generating %s exercises for %d items", ex_type, len(items))
-        for i in range(0, len(items), batch_size):
-            batch = items[i : i + batch_size]
-            logger.info(
-                "  %s batch %d/%d (%d items)",
-                ex_type,
-                i // batch_size + 1,
-                (len(items) + batch_size - 1) // batch_size,
-                len(batch),
-            )
-
+        for _batch_num, _total, batch in batch_items(items, batch_size, f"{ex_type} exercises"):
             if ex_type == "mcq":
                 exercises = _generate_mcq_batch(batch, llm)
             elif ex_type == "cloze":
@@ -132,8 +125,8 @@ def _generate_mcq_batch(
     response = llm.create_message(
         prompt=prompt,
         system=MCQ_SYSTEM_PROMPT,
-        max_tokens=4096,
-        temperature=0.7,
+        max_tokens=DEFAULT_MAX_TOKENS,
+        temperature=DEFAULT_TEMPERATURE,
     )
     return _parse_exercise_response(response, "mcq")
 
@@ -159,25 +152,16 @@ def _generate_cloze_batch(
     response = llm.create_message(
         prompt=prompt,
         system=CLOZE_SYSTEM_PROMPT,
-        max_tokens=4096,
-        temperature=0.7,
+        max_tokens=DEFAULT_MAX_TOKENS,
+        temperature=DEFAULT_TEMPERATURE,
     )
     return _parse_exercise_response(response, "cloze")
 
 
 def _parse_exercise_response(response: str, expected_type: str) -> list[dict]:
     """Parse the LLM response into exercise dicts."""
-    text = response.strip()
-    if text.startswith("```"):
-        text = text.split("\n", 1)[1] if "\n" in text else text[3:]
-        if text.endswith("```"):
-            text = text[:-3]
-        text = text.strip()
-
-    try:
-        data = json.loads(text)
-    except json.JSONDecodeError:
-        logger.error("Failed to parse exercise response as JSON")
+    data = parse_llm_json_response(response, f"{expected_type} exercise generation")
+    if not isinstance(data, list):
         return []
 
     exercises = []

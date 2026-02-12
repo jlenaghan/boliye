@@ -1,7 +1,6 @@
 """Tests for ingestion pipeline components."""
 
 import json
-import tempfile
 from pathlib import Path
 
 import pytest

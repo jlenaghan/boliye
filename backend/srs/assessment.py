@@ -4,13 +4,13 @@ Provides exact match checking with Hindi-specific normalization,
 and LLM-based fuzzy assessment for typed responses.
 """
 
-import json
 import logging
 import unicodedata
 from dataclasses import dataclass
 from enum import Enum
 
 from backend.llm_client import LLMClient
+from ingestion.utils import ZERO_WIDTH_CHARS, parse_llm_json_response
 
 logger = logging.getLogger(__name__)
 
@@ -63,16 +63,15 @@ def normalize_for_comparison(text: str) -> str:
     - Unicode NFC normalization
     - Strip whitespace
     - Lowercase (for English)
+    - Remove zero-width characters
     - Remove common punctuation
     """
     text = unicodedata.normalize("NFC", text.strip())
     text = text.lower()
-    # Remove zero-width characters
-    for char in ["\u200b", "\u200c", "\u200d", "\ufeff"]:
-        text = text.replace(char, "")
+    # Remove zero-width characters using translate (more efficient)
+    text = text.translate(str.maketrans("", "", ZERO_WIDTH_CHARS))
     # Remove common punctuation that doesn't affect meaning
-    for char in [".", ",", "!", "?", "।", ";", ":", "'", '"', "(", ")"]:
-        text = text.replace(char, "")
+    text = text.translate(str.maketrans("", "", ".,!?।;:'\"()"))
     return text.strip()
 
 
@@ -207,17 +206,9 @@ def assess_fuzzy(
 
 def _parse_fuzzy_response(response: str, expected: str, actual: str) -> Assessment:
     """Parse the LLM fuzzy assessment response."""
-    text = response.strip()
-    if text.startswith("```"):
-        text = text.split("\n", 1)[1] if "\n" in text else text[3:]
-        if text.endswith("```"):
-            text = text[:-3]
-        text = text.strip()
+    data = parse_llm_json_response(response, "fuzzy assessment")
 
-    try:
-        data = json.loads(text)
-    except json.JSONDecodeError:
-        logger.error("Failed to parse fuzzy assessment response")
+    if not isinstance(data, dict):
         return Assessment(
             grade=AssessmentGrade.INCORRECT,
             suggested_rating=1,

@@ -1,3 +1,5 @@
+"""Anthropic LLM client with rate limiting and cost tracking."""
+
 import logging
 import time
 from collections import deque
@@ -14,6 +16,7 @@ class LLMClient:
     """Wrapper around the Anthropic API with rate limiting, retry logic, and cost tracking."""
 
     def __init__(self) -> None:
+        """Initialize the LLM client with API credentials and rate limiting."""
         self.client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
         self.model = settings.anthropic_model
         self.max_rpm = settings.anthropic_rate_limit_rpm
@@ -45,6 +48,7 @@ class LLMClient:
         max_tokens: int = 4096,
         temperature: float = 0.7,
     ) -> str:
+        """Send a message to the LLM and return the response text."""
         self._enforce_rate_limit()
         kwargs: dict = {
             "model": self.model,
@@ -65,6 +69,7 @@ class LLMClient:
         return response.content[0].text
 
     def get_cost_estimate(self) -> dict[str, float]:
+        """Return token counts and estimated cost in USD."""
         input_cost = self.total_input_tokens * settings.llm_input_price_per_million / 1_000_000
         output_cost = self.total_output_tokens * settings.llm_output_price_per_million / 1_000_000
         return {

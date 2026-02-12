@@ -1,3 +1,5 @@
+"""Content item model for Hindi vocabulary and phrases."""
+
 from sqlalchemy import Float, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -5,6 +7,8 @@ from backend.models.base import Base, TimestampMixin
 
 
 class ContentItem(Base, TimestampMixin):
+    """A Hindi term, phrase, or grammar pattern with metadata."""
+
     __tablename__ = "content_items"
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)

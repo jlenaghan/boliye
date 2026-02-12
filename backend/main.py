@@ -1,6 +1,8 @@
+"""FastAPI application entry point and configuration."""
+
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import AsyncGenerator
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -15,7 +17,7 @@ from backend.models import Base
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
-    # Create tables on startup (for development; use Alembic in production)
+    """Initialize database on startup and cleanup on shutdown."""
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     yield
@@ -42,6 +44,7 @@ app.include_router(stats_router)
 
 @app.get("/health")
 async def health_check() -> dict[str, str]:
+    """Check database connectivity and return status."""
     async with async_session() as session:
         await session.execute(text("SELECT 1"))
     return {"status": "ok"}

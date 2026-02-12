@@ -18,7 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from agents.assessor_agent import AssessorAgent, DetailedAssessment
 from agents.base import LearnerContext, ReviewEvent
-from agents.content_agent import ContentAgent, ExerciseSelection
+from agents.content_agent import ContentAgent
 from agents.scheduler_agent import SchedulerAgent, SchedulerDecision
 from agents.tutor_agent import TutorAgent, TutorResponse
 from backend.config import settings, utcnow
@@ -82,6 +82,7 @@ class Orchestrator:
     """
 
     def __init__(self, llm: LLMClient | None = None) -> None:
+        """Initialize the orchestrator with all sub-agents."""
         self.llm = llm
         self.fsrs = FSRS(target_retention=settings.target_retention)
         self.scheduler = SchedulerAgent(fsrs=self.fsrs, llm=llm)

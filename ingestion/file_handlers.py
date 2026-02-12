@@ -4,6 +4,7 @@ import csv
 import io
 import json
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -111,7 +112,7 @@ def read_docx_file(path: Path) -> RawDocument:
 
 
 # Map file extensions to their handler functions
-HANDLERS: dict[str, callable] = {
+HANDLERS: dict[str, Callable[[Path], RawDocument]] = {
     ".txt": read_text_file,
     ".md": read_text_file,
     ".csv": read_csv_file,

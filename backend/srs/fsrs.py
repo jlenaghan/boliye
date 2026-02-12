@@ -76,6 +76,7 @@ class FSRS:
         weights: list[float] | None = None,
         target_retention: float = DEFAULT_TARGET_RETENTION,
     ) -> None:
+        """Initialize FSRS with optional custom weights and target retention."""
         self.w = weights or DEFAULT_WEIGHTS
         self.target_retention = target_retention
 

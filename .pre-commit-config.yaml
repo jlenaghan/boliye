@@ -15,3 +15,9 @@ repos:
           - pydantic-settings>=2.0
           - fastapi>=0.115.0
         args: [--ignore-missing-imports]
+  - repo: https://github.com/PyCQA/bandit
+    rev: 1.7.7
+    hooks:
+      - id: bandit
+        args: ["-c", "pyproject.toml"]
+        additional_dependencies: ["bandit[toml]"]

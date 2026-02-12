@@ -1,3 +1,5 @@
+"""Exercise model for review questions."""
+
 from sqlalchemy import ForeignKey, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -5,6 +7,8 @@ from backend.models.base import Base, TimestampMixin
 
 
 class Exercise(Base, TimestampMixin):
+    """A generated exercise (MCQ, cloze, or translation) for a content item."""
+
     __tablename__ = "exercises"
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)

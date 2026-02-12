@@ -4,9 +4,14 @@ import json
 import logging
 
 from backend.llm_client import LLMClient
+from ingestion.constants import DEFAULT_MAX_TOKENS, DEFAULT_TEMPERATURE_DETERMINISTIC
 from ingestion.extractor import ExtractedItem
+from ingestion.utils import batch_items, parse_llm_json_response
 
 logger = logging.getLogger(__name__)
+
+# Topic batch size - larger than default since these are simpler classifications
+TOPIC_BATCH_SIZE = 50
 
 # Standard topic taxonomy for Hindi learning
 TOPIC_TAXONOMY = [
@@ -69,7 +74,7 @@ Return ONLY the JSON array."""
 def assign_topics(
     items: list[ExtractedItem],
     llm: LLMClient,
-    batch_size: int = 50,
+    batch_size: int = TOPIC_BATCH_SIZE,
 ) -> dict[str, list[str]]:
     """Assign topic tags to items in batches.
 
@@ -77,14 +82,7 @@ def assign_topics(
     """
     results: dict[str, list[str]] = {}
 
-    for i in range(0, len(items), batch_size):
-        batch = items[i : i + batch_size]
-        logger.info(
-            "Assigning topics: batch %d/%d (%d items)",
-            i // batch_size + 1,
-            (len(items) + batch_size - 1) // batch_size,
-            len(batch),
-        )
+    for _batch_num, _total, batch in batch_items(items, batch_size, "topics"):
         batch_results = _process_batch(batch, llm)
         results.update(batch_results)
 
@@ -119,8 +117,8 @@ def _process_batch(
     response = llm.create_message(
         prompt=prompt,
         system=system,
-        max_tokens=4096,
-        temperature=0.2,
+        max_tokens=DEFAULT_MAX_TOKENS,
+        temperature=DEFAULT_TEMPERATURE_DETERMINISTIC,
     )
 
     return _parse_topic_response(response)
@@ -128,17 +126,8 @@ def _process_batch(
 
 def _parse_topic_response(response: str) -> dict[str, list[str]]:
     """Parse the LLM response into a term -> topics mapping."""
-    text = response.strip()
-    if text.startswith("```"):
-        text = text.split("\n", 1)[1] if "\n" in text else text[3:]
-        if text.endswith("```"):
-            text = text[:-3]
-        text = text.strip()
-
-    try:
-        data = json.loads(text)
-    except json.JSONDecodeError:
-        logger.error("Failed to parse topic response as JSON")
+    data = parse_llm_json_response(response, "topic assignment")
+    if not isinstance(data, list):
         return {}
 
     valid_topics = set(TOPIC_TAXONOMY)
@@ -150,7 +139,8 @@ def _parse_topic_response(response: str) -> dict[str, list[str]]:
         # Filter to valid topics only
         filtered = [t for t in topics if t in valid_topics]
         if not filtered:
-            filtered = ["daily_routine"]  # Safe default
+            logger.warning("No valid topics for term '%s', defaulting to 'daily_routine'", term)
+            filtered = ["daily_routine"]
         results[term] = filtered
 
     return results

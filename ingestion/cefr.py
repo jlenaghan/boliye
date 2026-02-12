@@ -4,9 +4,14 @@ import json
 import logging
 
 from backend.llm_client import LLMClient
+from ingestion.constants import DEFAULT_MAX_TOKENS, DEFAULT_TEMPERATURE_DETERMINISTIC
 from ingestion.extractor import ExtractedItem
+from ingestion.utils import batch_items, parse_llm_json_response
 
 logger = logging.getLogger(__name__)
+
+# CEFR batch size - larger than default since these are simpler classifications
+CEFR_BATCH_SIZE = 50
 
 CEFR_SYSTEM_PROMPT = """\
 You are an expert in Hindi language pedagogy and the Common European Framework of Reference \
@@ -42,7 +47,7 @@ Return ONLY the JSON array."""
 def assign_cefr_levels(
     items: list[ExtractedItem],
     llm: LLMClient,
-    batch_size: int = 50,
+    batch_size: int = CEFR_BATCH_SIZE,
 ) -> dict[str, tuple[str, float]]:
     """Assign CEFR levels to items in batches.
 
@@ -50,14 +55,7 @@ def assign_cefr_levels(
     """
     results: dict[str, tuple[str, float]] = {}
 
-    for i in range(0, len(items), batch_size):
-        batch = items[i : i + batch_size]
-        logger.info(
-            "Assigning CEFR levels: batch %d/%d (%d items)",
-            i // batch_size + 1,
-            (len(items) + batch_size - 1) // batch_size,
-            len(batch),
-        )
+    for _batch_num, _total, batch in batch_items(items, batch_size, "CEFR levels"):
         batch_results = _process_batch(batch, llm)
         results.update(batch_results)
 
@@ -89,8 +87,8 @@ def _process_batch(
     response = llm.create_message(
         prompt=prompt,
         system=CEFR_SYSTEM_PROMPT,
-        max_tokens=4096,
-        temperature=0.2,
+        max_tokens=DEFAULT_MAX_TOKENS,
+        temperature=DEFAULT_TEMPERATURE_DETERMINISTIC,
     )
 
     return _parse_cefr_response(response)
@@ -98,17 +96,8 @@ def _process_batch(
 
 def _parse_cefr_response(response: str) -> dict[str, tuple[str, float]]:
     """Parse the LLM response into a term -> (level, confidence) mapping."""
-    text = response.strip()
-    if text.startswith("```"):
-        text = text.split("\n", 1)[1] if "\n" in text else text[3:]
-        if text.endswith("```"):
-            text = text[:-3]
-        text = text.strip()
-
-    try:
-        data = json.loads(text)
-    except json.JSONDecodeError:
-        logger.error("Failed to parse CEFR response as JSON")
+    data = parse_llm_json_response(response, "CEFR assignment")
+    if not isinstance(data, list):
         return {}
 
     results: dict[str, tuple[str, float]] = {}

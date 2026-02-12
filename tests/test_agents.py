@@ -1,9 +1,9 @@
 """Tests for the agent system: context, scheduler, assessor, content, tutor, orchestrator."""
 
-from datetime import datetime, timedelta
-from unittest.mock import AsyncMock, MagicMock, patch
+from datetime import timedelta
+from unittest.mock import AsyncMock, MagicMock
 
-from agents.assessor_agent import AssessorAgent, DetailedAssessment
+from agents.assessor_agent import AssessorAgent
 from agents.base import LearnerContext, ReviewEvent
 from agents.content_agent import ContentAgent, ExerciseSelection
 from agents.orchestrator import Orchestrator, _ActiveSession
@@ -14,9 +14,7 @@ from backend.models.card import Card
 from backend.models.content_item import ContentItem
 from backend.models.exercise import Exercise
 from backend.srs.assessment import Assessment, AssessmentGrade
-from backend.srs.fsrs import FSRS
 from backend.srs.queue import ReviewQueue
-
 
 # --- Helpers ---
 

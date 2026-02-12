@@ -142,9 +142,7 @@ def extract_devanagari_segments(text: str) -> list[tuple[str, bool]]:
         if current_is_devanagari is None:
             current_is_devanagari = ch_is_dev
             current_segment = ch
-        elif is_neutral:
-            current_segment += ch
-        elif ch_is_dev == current_is_devanagari:
+        elif is_neutral or ch_is_dev == current_is_devanagari:
             current_segment += ch
         else:
             if current_segment.strip():

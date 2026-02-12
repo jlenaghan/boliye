@@ -1,3 +1,5 @@
+"""Learner model for user profiles."""
+
 from sqlalchemy import String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -5,6 +7,8 @@ from backend.models.base import Base, TimestampMixin
 
 
 class Learner(Base, TimestampMixin):
+    """A user learning Hindi with their profile and preferences."""
+
     __tablename__ = "learners"
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)

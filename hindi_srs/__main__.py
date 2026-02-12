@@ -13,7 +13,6 @@ import asyncio
 import json
 import logging
 import time
-from pathlib import Path
 
 from sqlalchemy import and_, func, select
 
@@ -87,7 +86,7 @@ async def cmd_review(args: argparse.Namespace) -> None:
             print("\nNo cards due for review. You're all caught up!")
             return
 
-        print(f"\n  Review Session")
+        print("\n  Review Session")
         print(f"  {len(due_cards)} due + {len(new_cards)} new = {len(all_cards)} cards\n")
         print("  Ratings: 1=Again  2=Hard  3=Good  4=Easy")
         print("  Type 'q' to quit\n")
@@ -220,7 +219,7 @@ async def cmd_review(args: argparse.Namespace) -> None:
 
     # Summary
     accuracy = correct / reviewed * 100 if reviewed else 0
-    print(f"\n  Session Complete!")
+    print("\n  Session Complete!")
     print(f"  Reviewed: {reviewed}  Correct: {correct}  Accuracy: {accuracy:.0f}%\n")
 
 
@@ -262,7 +261,7 @@ async def cmd_stats(args: argparse.Namespace) -> None:
             )
         )).scalar() or 0
 
-    print(f"\n  Hindi SRS Statistics")
+    print("\n  Hindi SRS Statistics")
     print(f"  {'Total cards:':<20} {total}")
     print(f"  {'Due now:':<20} {due}")
     print(f"  {'New (unseen):':<20} {new}")
@@ -349,6 +348,7 @@ def cmd_render(args: argparse.Namespace) -> None:
 
 
 def main() -> None:
+    """Entry point for the Hindi SRS CLI application."""
     parser = argparse.ArgumentParser(
         prog="hindi_srs",
         description="Hindi SRS Language Learning System",

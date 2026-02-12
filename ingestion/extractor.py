@@ -1,10 +1,15 @@
 """LLM-based extraction of structured content items from raw documents."""
 
-import json
 import logging
 from dataclasses import dataclass
 
 from backend.llm_client import LLMClient
+from ingestion.constants import (
+    DEFAULT_CHUNK_SIZE,
+    DEFAULT_EXTRACTION_TEMPERATURE,
+    DEFAULT_MAX_TOKENS,
+)
+from ingestion.utils import parse_llm_json_response
 
 logger = logging.getLogger(__name__)
 
@@ -69,7 +74,7 @@ def extract_items(
 
     For large documents, splits into chunks to stay within context limits.
     """
-    chunks = _split_into_chunks(content, max_chars=12000)
+    chunks = _split_into_chunks(content, max_chars=DEFAULT_CHUNK_SIZE)
     all_items: list[ExtractedItem] = []
 
     for i, chunk in enumerate(chunks):
@@ -88,8 +93,8 @@ def extract_items(
         response = llm.create_message(
             prompt=prompt,
             system=EXTRACTION_SYSTEM_PROMPT,
-            max_tokens=4096,
-            temperature=0.3,
+            max_tokens=DEFAULT_MAX_TOKENS,
+            temperature=DEFAULT_EXTRACTION_TEMPERATURE,
         )
         items = _parse_response(response, source_path)
         all_items.extend(items)
@@ -100,20 +105,7 @@ def extract_items(
 
 def _parse_response(response: str, source_path: str) -> list[ExtractedItem]:
     """Parse the LLM JSON response into ExtractedItem objects."""
-    # Strip markdown code fences if present
-    text = response.strip()
-    if text.startswith("```"):
-        text = text.split("\n", 1)[1] if "\n" in text else text[3:]
-        if text.endswith("```"):
-            text = text[:-3]
-        text = text.strip()
-
-    try:
-        data = json.loads(text)
-    except json.JSONDecodeError:
-        logger.error("Failed to parse LLM response as JSON from %s", source_path)
-        logger.debug("Response was: %s", text[:500])
-        return []
+    data = parse_llm_json_response(response, f"extraction from {source_path}")
 
     if not isinstance(data, list):
         logger.error("Expected JSON array, got %s", type(data).__name__)

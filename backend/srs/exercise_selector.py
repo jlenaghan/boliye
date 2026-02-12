@@ -34,6 +34,7 @@ class ExerciseSelector:
     """
 
     def __init__(self, history_size: int = 5) -> None:
+        """Initialize the selector with a history of recent exercise types."""
         self._recent_types: deque[str] = deque(maxlen=history_size)
 
     async def select(

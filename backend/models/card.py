@@ -1,3 +1,5 @@
+"""SRS card model linking learners to content items."""
+
 from datetime import datetime
 
 from sqlalchemy import DateTime, Float, ForeignKey, Integer
@@ -8,6 +10,8 @@ from backend.models.base import Base, TimestampMixin
 
 
 class Card(Base, TimestampMixin):
+    """A flashcard with FSRS scheduling state for a learner-content pair."""
+
     __tablename__ = "cards"
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)

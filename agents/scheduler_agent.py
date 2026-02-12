@@ -11,14 +11,14 @@ from __future__ import annotations
 import json
 import logging
 from dataclasses import dataclass
-from sqlalchemy import and_, func, select
+
+from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from agents.base import BaseAgent, LearnerContext
 from backend.config import settings, utcnow
 from backend.models.card import Card
 from backend.models.content_item import ContentItem
-from backend.models.review_log import ReviewLog
 from backend.srs.fsrs import FSRS, CardState
 from backend.srs.queue import ReviewQueue
 
@@ -40,15 +40,18 @@ class SchedulerAgent(BaseAgent):
     """Wraps the SRS engine with intelligent, adaptive scheduling."""
 
     def __init__(self, fsrs: FSRS | None = None, **kwargs) -> None:
+        """Initialize the scheduler with an optional FSRS instance."""
         super().__init__(**kwargs)
         self.fsrs = fsrs or FSRS(target_retention=settings.target_retention)
 
     @property
     def name(self) -> str:
+        """Return the agent identifier."""
         return "scheduler"
 
     @property
     def description(self) -> str:
+        """Return what this agent does."""
         return "Manages SRS scheduling, queue prioritization, and adaptive card introduction"
 
     async def build_adaptive_queue(

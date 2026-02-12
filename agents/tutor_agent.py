@@ -9,15 +9,13 @@ Responsibilities:
 
 from __future__ import annotations
 
-import json
 import logging
 from dataclasses import dataclass
 
 from agents.base import BaseAgent, LearnerContext
-from backend.llm_client import LLMClient
 from backend.models.content_item import ContentItem
 from backend.models.exercise import Exercise
-from backend.srs.assessment import Assessment, AssessmentGrade
+from backend.srs.assessment import Assessment
 
 logger = logging.getLogger(__name__)
 
@@ -60,10 +58,12 @@ class TutorAgent(BaseAgent):
 
     @property
     def name(self) -> str:
+        """Return the agent identifier."""
         return "tutor"
 
     @property
     def description(self) -> str:
+        """Return what this agent does."""
         return "Explains errors, provides mnemonics, and adapts teaching depth"
 
     def explain(

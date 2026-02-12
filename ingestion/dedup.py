@@ -1,27 +1,12 @@
 """Deduplication and normalization for extracted content items."""
 
 import logging
-import unicodedata
 
+from ingestion.constants import CONTEXT_WEIGHT, FAMILIARITY_SIGNAL_WEIGHT, ROMANIZATION_BONUS
 from ingestion.extractor import ExtractedItem
+from ingestion.utils import normalize_hindi
 
 logger = logging.getLogger(__name__)
-
-
-def normalize_hindi(text: str) -> str:
-    """Normalize Hindi text for comparison.
-
-    - Unicode NFC normalization (canonical decomposition + composition)
-    - Strip whitespace
-    - Remove zero-width joiners/non-joiners that don't affect meaning
-    """
-    text = unicodedata.normalize("NFC", text.strip())
-    # Remove zero-width characters that can cause false mismatches
-    text = text.replace("\u200b", "")  # zero-width space
-    text = text.replace("\u200c", "")  # zero-width non-joiner
-    text = text.replace("\u200d", "")  # zero-width joiner
-    text = text.replace("\ufeff", "")  # BOM
-    return text
 
 
 def deduplicate(items: list[ExtractedItem]) -> list[ExtractedItem]:
@@ -38,7 +23,7 @@ def deduplicate(items: list[ExtractedItem]) -> list[ExtractedItem]:
     deduped = []
     duplicates_merged = 0
 
-    for key, group in groups.items():
+    for _key, group in groups.items():
         if len(group) == 1:
             deduped.append(group[0])
         else:
@@ -87,8 +72,8 @@ def _richness_score(item: ExtractedItem) -> int:
     if item.definition:
         score += len(item.definition)
     if item.context:
-        score += len(item.context) * 2  # Context is highly valuable
+        score += len(item.context) * CONTEXT_WEIGHT
     if item.romanization:
-        score += 10
-    score += len(item.familiarity_signals) * 5
+        score += ROMANIZATION_BONUS
+    score += len(item.familiarity_signals) * FAMILIARITY_SIGNAL_WEIGHT
     return score

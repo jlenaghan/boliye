@@ -14,8 +14,6 @@ from datetime import datetime
 
 from backend.config import utcnow
 from backend.llm_client import LLMClient
-from backend.srs.assessment import Assessment
-from backend.srs.fsrs import CardState
 
 logger = logging.getLogger(__name__)
 
@@ -114,6 +112,7 @@ class BaseAgent(ABC):
     """
 
     def __init__(self, llm: LLMClient | None = None) -> None:
+        """Initialize the agent with an optional LLM client."""
         self.llm = llm
         self.logger = logging.getLogger(f"agents.{self.name}")
 

@@ -6,14 +6,19 @@ and review logging into a cohesive session flow.
 
 import logging
 from dataclasses import dataclass, field
-from datetime import datetime
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.models.card import Card
 from backend.models.exercise import Exercise
 from backend.models.review_log import ReviewLog
-from backend.srs.assessment import Assessment, AssessmentGrade, assess_exact, assess_fuzzy, assess_mcq
+from backend.srs.assessment import (
+    Assessment,
+    AssessmentGrade,
+    assess_exact,
+    assess_fuzzy,
+    assess_mcq,
+)
 from backend.srs.exercise_selector import ExerciseSelector
 from backend.srs.fsrs import FSRS, CardState, ReviewResult
 from backend.srs.queue import ReviewQueue, build_queue
@@ -56,18 +61,22 @@ class ReviewSession:
     _cards: list[Card] = field(default_factory=list)
 
     def __post_init__(self) -> None:
+        """Initialize the card list from the queue."""
         self._cards = self.queue.interleaved()
 
     @property
     def remaining(self) -> int:
+        """Return the number of cards left to review."""
         return max(0, len(self._cards) - self._card_index)
 
     @property
     def is_complete(self) -> bool:
+        """Return True if all cards have been reviewed."""
         return self._card_index >= len(self._cards)
 
     @property
     def current_card(self) -> Card | None:
+        """Return the current card or None if session is complete."""
         if self._card_index < len(self._cards):
             return self._cards[self._card_index]
         return None

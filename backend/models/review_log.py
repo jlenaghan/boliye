@@ -1,3 +1,5 @@
+"""Review log model for tracking study history."""
+
 from datetime import datetime
 
 from sqlalchemy import DateTime, Float, ForeignKey, Integer, String
@@ -8,6 +10,8 @@ from backend.models.base import Base
 
 
 class ReviewLog(Base):
+    """A record of a single review event with performance metrics."""
+
     __tablename__ = "review_logs"
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)

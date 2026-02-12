@@ -4,11 +4,12 @@ from datetime import datetime
 
 from pydantic import BaseModel
 
-
 # --- Session ---
 
 
 class SessionStartResponse(BaseModel):
+    """Response when starting a new review session."""
+
     session_id: str
     learner_id: int
     total_cards: int
@@ -17,6 +18,8 @@ class SessionStartResponse(BaseModel):
 
 
 class ExerciseResponse(BaseModel):
+    """Response containing the next exercise to review."""
+
     card_id: int
     exercise_id: int
     exercise_type: str
@@ -28,6 +31,8 @@ class ExerciseResponse(BaseModel):
 
 
 class AnswerRequest(BaseModel):
+    """Request to submit an answer for an exercise."""
+
     card_id: int
     exercise_id: int
     response: str
@@ -36,6 +41,8 @@ class AnswerRequest(BaseModel):
 
 
 class AnswerResponse(BaseModel):
+    """Response after submitting an answer with feedback and scheduling info."""
+
     grade: str  # correct, close, partial, incorrect
     suggested_rating: int
     applied_rating: int
@@ -48,6 +55,8 @@ class AnswerResponse(BaseModel):
 
 
 class SessionStatsResponse(BaseModel):
+    """Statistics for the current review session."""
+
     cards_reviewed: int
     correct: int
     close: int
@@ -60,6 +69,8 @@ class SessionStatsResponse(BaseModel):
 
 
 class LearnerStatsResponse(BaseModel):
+    """Overall statistics for a learner."""
+
     total_cards: int
     cards_due: int
     cards_new: int

@@ -1,3 +1,5 @@
+"""Application configuration and settings management."""
+
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -14,6 +16,8 @@ def utcnow() -> datetime:
 
 
 class Settings(BaseSettings):
+    """Application settings loaded from environment variables."""
+
     app_name: str = "Hindi SRS"
     database_url: str = f"sqlite+aiosqlite:///{Path(__file__).resolve().parent.parent / 'data' / 'hindi_srs.db'}"
     anthropic_api_key: str = ""

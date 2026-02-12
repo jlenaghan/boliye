@@ -6,8 +6,8 @@ from unittest.mock import patch
 from hindi_srs.devanagari_renderer import (
     _fallback_render,
     _find_font,
-    _is_kitty_terminal,
     _is_iterm2_terminal,
+    _is_kitty_terminal,
     _supports_inline_images,
     display_card,
     display_mixed_text,

@@ -1,6 +1,6 @@
 """Tests for the SRS engine: FSRS algorithm, assessment, and queue logic."""
 
-from datetime import datetime, timedelta
+from datetime import timedelta
 
 from backend.config import utcnow
 from backend.srs.assessment import (
@@ -12,7 +12,6 @@ from backend.srs.assessment import (
 )
 from backend.srs.fsrs import FSRS, CardState
 from backend.srs.queue import ReviewQueue
-
 
 # --- FSRS Algorithm ---
 
