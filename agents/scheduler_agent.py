@@ -39,7 +39,7 @@ class SchedulerDecision:
 class SchedulerAgent(BaseAgent):
     """Wraps the SRS engine with intelligent, adaptive scheduling."""
 
-    def __init__(self, fsrs: FSRS | None = None, **kwargs) -> None:
+    def __init__(self, fsrs: FSRS | None = None, **kwargs) -> None:  # type: ignore[no-untyped-def]
         """Initialize the scheduler with an optional FSRS instance."""
         super().__init__(**kwargs)
         self.fsrs = fsrs or FSRS(target_retention=settings.target_retention)

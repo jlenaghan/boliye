@@ -4,10 +4,16 @@ Coordinates the SRS engine, exercise selection, assessment,
 and review logging into a cohesive session flow.
 """
 
+from __future__ import annotations
+
 import logging
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 
 from sqlalchemy.ext.asyncio import AsyncSession
+
+if TYPE_CHECKING:
+    from backend.llm_client import LLMClient
 
 from backend.models.card import Card
 from backend.models.exercise import Exercise
@@ -113,7 +119,7 @@ class ReviewSession:
         session_card: SessionCard,
         response: str,
         time_ms: int,
-        llm=None,
+        llm: LLMClient | None = None,
         self_rating: int | None = None,
     ) -> tuple[Assessment, ReviewResult]:
         """Submit an answer for the current card.

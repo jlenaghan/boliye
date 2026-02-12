@@ -5,11 +5,12 @@ from pathlib import Path
 
 import pytest
 
-from ingestion.dedup import deduplicate, normalize_hindi
+from ingestion.dedup import deduplicate
 from ingestion.extractor import ExtractedItem, _parse_response, _split_into_chunks
 from ingestion.familiarity import assign_familiarity, infer_familiarity
 from ingestion.file_handlers import read_csv_file, read_file, read_pdf_file, read_text_file
 from ingestion.gap_analysis import analyze_gaps
+from ingestion.utils import normalize_hindi
 
 
 def _make_item(

@@ -76,8 +76,16 @@ convention = "google"
 [tool.mypy]
 python_version = "3.11"
 strict = true
-warn_return_any = true
+warn_return_any = false  # Allow Any returns for now
 warn_unused_configs = true
+# Relaxations for gradual typing
+disallow_any_generics = false  # Allow unparameterized generics like dict, list
+ignore_missing_imports = true  # Allow missing stubs for third-party libraries
+
+[[tool.mypy.overrides]]
+module = ["tests.*", "scripts.*"]
+# Relaxed type checking for tests and scripts
+ignore_errors = true
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

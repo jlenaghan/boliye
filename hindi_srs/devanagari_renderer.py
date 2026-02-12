@@ -151,7 +151,7 @@ def extract_devanagari_segments(text: str) -> list[tuple[str, bool]]:
             current_segment = ch
             current_is_devanagari = ch_is_dev
 
-    if current_segment.strip():
+    if current_segment.strip() and current_is_devanagari is not None:
         segments.append((current_segment, current_is_devanagari))
 
     return segments
@@ -175,8 +175,8 @@ def _render_text_to_image(
     dummy = Image.new("RGB", (1, 1))
     draw = ImageDraw.Draw(dummy)
     bbox = draw.textbbox((0, 0), text, font=font)
-    width = bbox[2] - bbox[0] + padding * 2
-    height = bbox[3] - bbox[1] + padding * 2
+    width = int(bbox[2] - bbox[0] + padding * 2)
+    height = int(bbox[3] - bbox[1] + padding * 2)
 
     # Render
     img = Image.new("RGB", (width, height), color=_BG_COLOR)

@@ -338,7 +338,8 @@ class Orchestrator:
         learner = result.scalar_one_or_none()
 
         name = learner.name if learner else ""
-        level = learner.current_level if learner else "A1"
+        level = learner.current_level if learner else None
+        level = level or "A1"  # Default to A1 if not set
 
         # Count total reviews
         count_stmt = select(func.count(ReviewLog.id)).where(ReviewLog.learner_id == learner_id)
